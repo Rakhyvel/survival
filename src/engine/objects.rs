@@ -1,9 +1,10 @@
 // Put OpenGL Objects here
 
 use std::{
+    env,
     ffi::{CStr, CString},
     marker::PhantomData,
-    path::Path,
+    path::{Path, PathBuf},
     ptr::{null, null_mut},
 };
 
@@ -311,7 +312,11 @@ impl Texture {
 
     pub fn from_png(texture_filename: &'static str) -> Self {
         let texture = Texture::new();
-        texture.load(&Path::new(texture_filename)).unwrap();
+        const RES_PATH: &str = "C:\\Users\\Joseph\\git\\survival\\res";
+        let res_path = Path::new(RES_PATH);
+        let mut path = PathBuf::from(res_path);
+        path.push(texture_filename);
+        texture.load(&path).unwrap();
         texture
     }
 
@@ -332,7 +337,7 @@ impl Texture {
             gl::TexImage2D(
                 gl::TEXTURE_2D,
                 0,
-                gl::RGBA as i32,
+                gl::SRGB as i32,
                 width,
                 height,
                 0,
@@ -382,7 +387,7 @@ impl Texture {
             gl::TexImage2D(
                 gl::TEXTURE_2D,
                 0,
-                gl::RGBA as i32,
+                gl::SRGB as i32,
                 img.width() as i32,
                 img.height() as i32,
                 0,

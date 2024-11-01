@@ -8,6 +8,7 @@ use super::{
     objects::*,
     physics::PositionComponent,
     shadow_map::DirectionalLightSource,
+    text,
 };
 
 use gl::types::GLuint;
@@ -19,6 +20,7 @@ pub fn render_3d_models_system(
     open_gl: &mut OpenGl,
     directional_light: &DirectionalLightSource,
     mesh_manager: &MeshManager,
+    texture_manager: &TextureManager,
     bvh: &BVH<Entity>,
     int_screen_resolution: nalgebra_glm::I32Vec2,
     debug: bool,
@@ -55,12 +57,11 @@ pub fn render_3d_models_system(
         rendered += 1;
         let model = world.get::<&ModelComponent>(model_id).unwrap();
         let mesh = mesh_manager.get_mesh(model.mesh_id).unwrap();
+        let texture = texture_manager.get_texture(model.texture_id).unwrap();
         let model_matrix = model.get_model_matrix();
 
-        model.texture.activate(gl::TEXTURE0);
-        model
-            .texture
-            .associate_uniform(open_gl.program.id(), 0, "texture0");
+        texture.activate(gl::TEXTURE0);
+        texture.associate_uniform(open_gl.program.id(), 0, "texture0");
 
         directional_light.depth_map.activate(gl::TEXTURE1);
         directional_light
@@ -78,10 +79,10 @@ pub fn render_3d_models_system(
 /// An actual model, with geometry, a position, scale, rotation, and texture.
 pub struct ModelComponent {
     pub mesh_id: MeshId,
+    pub texture_id: TextureId,
     position: nalgebra_glm::Vec3,
     scale: nalgebra_glm::Vec3,
     model_matrix: nalgebra_glm::Mat4,
-    pub texture: Texture,
 }
 
 /// Contains a collection of meshes, and associates them with a MeshId.
@@ -100,6 +101,14 @@ pub struct Mesh {
     indices: Vec<u32>,
     pub aabb: AABB,
 }
+
+pub struct TextureManager {
+    textures: Vec<Texture>,
+}
+
+/// Opaque type used by a TextureManager to associate textures.
+#[derive(Copy, Clone)]
+pub struct TextureId(usize);
 
 /// Encapsulates stuff needed for rendering using opengl, including the camera and the shader program.
 pub struct OpenGl {
@@ -151,15 +160,15 @@ impl MeshId {
 impl ModelComponent {
     pub fn new(
         mesh_id: MeshId,
+        texture_id: TextureId,
         position: nalgebra_glm::Vec3,
         scale: nalgebra_glm::Vec3,
-        texture: Texture,
     ) -> Self {
         Self {
             mesh_id,
+            texture_id,
             position,
             scale,
-            texture,
             model_matrix: Self::construct_model_matrix(&position, &scale),
         }
     }
@@ -214,6 +223,7 @@ impl Mesh {
             })
             .collect();
 
+        // Allocate VRAM buffers (this is slow!)
         for i in 0..geometry.len() {
             geometry[i].vbo.set_data(&geometry[i].vertex_data);
             geometry[i].ibo.set_data(&indices);
@@ -293,6 +303,32 @@ impl Mesh {
                 0 as *const _,
             );
         }
+    }
+}
+
+impl TextureManager {
+    pub fn new() -> Self {
+        Self { textures: vec![] }
+    }
+
+    pub fn add_texture(&mut self, texture: Texture) -> TextureId {
+        let id = self.textures.len();
+        self.textures.push(texture);
+        TextureId::new(id)
+    }
+
+    pub fn get_texture(&self, id: TextureId) -> Option<&Texture> {
+        self.textures.get(id.as_usize())
+    }
+}
+
+impl TextureId {
+    pub fn new(id: usize) -> Self {
+        TextureId(id)
+    }
+
+    pub fn as_usize(&self) -> usize {
+        self.0
     }
 }
 

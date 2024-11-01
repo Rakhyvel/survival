@@ -9,6 +9,8 @@ pub(crate) mod bvh;
 #[allow(unused)]
 pub(crate) mod camera;
 #[allow(unused)]
+pub(crate) mod chunked_map;
+#[allow(unused)]
 pub(crate) mod frustrum;
 #[allow(unused)]
 pub(crate) mod objects;

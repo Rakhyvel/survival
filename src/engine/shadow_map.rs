@@ -6,7 +6,7 @@ use super::{
     camera::{Camera, ProjectionKind},
     frustrum::Frustrum,
     objects::{Fbo, Program, Texture},
-    render3d::{MeshManager, ModelComponent, OpenGl},
+    render3d::{MeshManager, ModelComponent, OpenGl, TextureManager},
 };
 
 #[derive(Default)]
@@ -58,6 +58,7 @@ pub fn directional_light_system(
     world: &mut World,
     open_gl: &mut OpenGl,
     mesh_manager: &MeshManager,
+    texture_manager: &TextureManager,
     bvh: &BVH<Entity>,
 ) {
     directional_light.frame_buffer.bind();
@@ -138,12 +139,11 @@ pub fn directional_light_system(
         rendered += 1;
         let model = world.get::<&ModelComponent>(model_id).unwrap();
         let mesh = mesh_manager.get_mesh(model.mesh_id).unwrap();
+        let texture = texture_manager.get_texture(model.texture_id).unwrap();
         let model_matrix = model.get_model_matrix();
 
-        model.texture.activate(gl::TEXTURE0);
-        model
-            .texture
-            .associate_uniform(open_gl.program(), 0, "texture0");
+        texture.activate(gl::TEXTURE0);
+        texture.associate_uniform(open_gl.program(), 0, "texture0");
         mesh.draw(open_gl, model_matrix, light_view_matrix, light_proj_matrix)
     }
     // println!("rendered: {}", rendered);

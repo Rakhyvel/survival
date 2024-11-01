@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 
 use rand::{Rng, SeedableRng};
 
-static HASH: [i32; 256] = [
+static HASH: [u8; 256] = [
     208, 34, 231, 213, 32, 248, 233, 56, 161, 78, 24, 140, 71, 48, 140, 254, 245, 255, 247, 247,
     40, 185, 248, 251, 245, 28, 124, 204, 204, 76, 36, 1, 107, 28, 234, 163, 202, 224, 245, 128,
     167, 204, 9, 92, 217, 54, 239, 174, 173, 102, 193, 189, 190, 121, 100, 108, 167, 44, 43, 77,
@@ -24,11 +24,6 @@ pub struct PerlinMap {
     map_width: usize,
 }
 
-#[derive(Default)]
-pub struct PerlinMapResource {
-    pub map: PerlinMap,
-}
-
 #[derive(Default, Copy, Clone)]
 struct Cell {
     pub height: f32,
@@ -38,102 +33,110 @@ struct Cell {
 struct Particle {
     pub age: usize,
 
-    pub pos: nalgebra_glm::Vec2,
-    pub vel: nalgebra_glm::Vec2,
+    pub pos: nalgebra_glm::Vec3,
+    pub vel: nalgebra_glm::Vec3,
 
     pub volume: f32,   // Total particle volume
     pub sediment: f32, // Fraction of volume that is sediment
+    pub rain: f32,     // Separate
+}
+
+pub trait HeightMap {
+    fn height_nearest(&self, p: nalgebra_glm::Vec2) -> f32;
+    fn height_interpolated(&self, p: nalgebra_glm::Vec2) -> f32;
+    fn normal(&self, p: nalgebra_glm::Vec2) -> nalgebra_glm::Vec3;
+    fn flow(&self, p: nalgebra_glm::Vec2) -> f32;
 }
 
 impl Particle {
-    fn new(pos: nalgebra_glm::Vec2) -> Self {
+    fn new(pos: nalgebra_glm::Vec3) -> Self {
         Self {
             age: 0,
             pos,
-            vel: nalgebra_glm::vec2(0.0, 0.0),
+            vel: nalgebra_glm::vec3(0.0, 0.0, 0.0),
             volume: 1.0,
             sediment: 0.0,
+            rain: 0.0,
         }
     }
 
     fn descend(&mut self, map: &mut PerlinMap) -> bool {
-        const MIN_VOLUME: f32 = 0.01;
-        const DEPOSITION_RATE: f32 = 0.1;
-        const EVAPORATION_RATE: f32 = 0.001;
-        const MAX_AGE: usize = 500;
-        const ENTRAINMENT: f32 = 1.0;
+        loop {
+            const MIN_VOLUME: f32 = 0.01;
+            const DEPOSITION_RATE: f32 = 0.1;
+            const EVAPORATION_RATE: f32 = 0.1;
+            const MAX_AGE: usize = 100;
+            const ENTRAINMENT: f32 = 1.0;
 
-        if self.age > MAX_AGE {
-            map.incr_height(self.pos, self.sediment);
-            return false;
+            if self.age > MAX_AGE {
+                break;
+            }
+
+            let grad = map.get_normal(self.pos.xy());
+
+            // Accelerate particle using classical mechanics
+            let old_pos = self.pos;
+            self.vel += grad / self.volume;
+            self.vel += nalgebra_glm::vec3(0.0, 0.1, 0.0);
+            if nalgebra_glm::length(&self.vel) > 0.0 {
+                self.vel = (2.0 as f32).sqrt() * nalgebra_glm::normalize(&self.vel);
+            }
+            self.vel.z -= 1.0; // gravity
+            self.pos += self.vel;
+            let mut flying = false;
+            if self.pos.z < map.height(self.pos.xy()) {
+                self.pos.z = map.height(self.pos.xy());
+                flying = false;
+            }
+
+            // Update flow, momentum
+            if !flying {
+                if self.pos.z >= 0.5 {
+                    map.incr_flow(old_pos.xy(), self.rain);
+                } else {
+                    self.rain = 1.0;
+                }
+            }
+
+            self.rain *= 1.0 - EVAPORATION_RATE;
+
+            self.age += 1;
         }
-
-        if self.volume < MIN_VOLUME {
-            map.incr_height(self.pos, self.sediment);
-            return false;
-        }
-
-        let grad = map.get_normal(self.pos);
-
-        // let eff_d = (DEPOSITION_RATE * (1.0 - map.root_density(self.pos))).max(0.0);
-
-        // Accelerate particle using classical mechanics
-        let old_pos = self.pos;
-        self.vel += grad.xy() / self.volume;
-        if nalgebra_glm::length(&self.vel) > 0.0 {
-            self.vel = (2.0 as f32).sqrt() * nalgebra_glm::normalize(&self.vel);
-        }
-        self.pos += self.vel;
-
-        // Check if particle is still in bounds
-        if map.oob(self.pos) {
-            map.incr_height(old_pos, self.sediment);
-            return false;
-        }
-
-        // Update flow, momentum
-        map.incr_flow(old_pos, self.volume);
-
-        // Compute Equilibrium Sediment Content
-        let c_eq = (self.volume
-            // * (1.0 + 0.01 * map.flow(old_pos))
-            * nalgebra_glm::length(&self.vel)
-            * (map.height(old_pos) - map.height(self.pos)))
-        .max(0.0);
-
-        // Compute Capacity Difference ("Driving Force")
-        let cdiff = c_eq - self.sediment;
-
-        // Perform the Mass Transfer!
-        let mass_transfered = DEPOSITION_RATE * cdiff;
-        self.sediment += mass_transfered;
-        map.incr_height(old_pos, -mass_transfered);
-
-        self.sediment /= 1.0 - EVAPORATION_RATE;
-        self.volume *= 1.0 - EVAPORATION_RATE;
-
-        map.cascade(self.pos);
-
-        self.age += 1;
-        true
+        false
     }
 }
 
 impl PerlinMap {
-    pub fn new(map_width: usize, level_of_detail: f32, seed: i32, amplitude: f32) -> Self {
+    pub fn new(map_width: usize) -> Self {
         let mut retval = Self::default();
 
         retval.map_width = map_width;
-        for y in 0..map_width {
-            for x in 0..map_width {
-                retval.cells.push(Cell {
-                    height: perlin2d(x as f32, y as f32, level_of_detail, 10, seed) * amplitude,
+
+        retval
+    }
+
+    pub fn generate(
+        &mut self,
+        level_of_detail: f32,
+        seed: i32,
+        amplitude: f32,
+        offset: nalgebra_glm::Vec2,
+    ) {
+        assert!(self.cells.len() == 0);
+        for y in 0..self.map_width {
+            for x in 0..self.map_width {
+                self.cells.push(Cell {
+                    height: perlin2d(
+                        x as f32 + offset.x,
+                        y as f32 + offset.y,
+                        level_of_detail,
+                        10,
+                        seed,
+                    ) * amplitude,
                     flow: 0.0,
                 });
             }
         }
-
-        retval
     }
 
     pub fn erode(&mut self, total_particles: usize, seed: u64) {
@@ -143,17 +146,18 @@ impl PerlinMap {
         for i in 0..total_particles {
             if i > checkpoint {
                 checkpoint += total_particles / 10;
-                println!(
-                    " - {}%",
-                    (i as f32 / total_particles as f32 * 100.0) as usize
-                );
+                // println!(
+                //     " - {}%",
+                //     (i as f32 / total_particles as f32 * 100.0) as usize
+                // );
             }
 
-            let mut drop = Particle::new(nalgebra_glm::vec2(
+            let mut drop = Particle::new(nalgebra_glm::vec3(
                 rng.gen_range(0.0..self.map_width as f32),
                 rng.gen_range(0.0..self.map_width as f32),
+                10.0,
             ));
-            if self.height(drop.pos) < 0.5 {
+            if self.height(drop.pos.xy()) < 0.5 {
                 continue;
             }
             while drop.descend(self) {}
@@ -228,7 +232,7 @@ impl PerlinMap {
         self.cells[p.x as usize + p.y as usize * self.map_width].height
     }
 
-    pub fn incr_height(&mut self, p: nalgebra_glm::Vec2, val: f32) {
+    fn incr_height(&mut self, p: nalgebra_glm::Vec2, val: f32) {
         if self.oob(p) {
             return;
         }
@@ -239,7 +243,10 @@ impl PerlinMap {
         self.cells[p.x as usize + p.y as usize * self.map_width].flow
     }
 
-    pub fn incr_flow(&mut self, p: nalgebra_glm::Vec2, val: f32) {
+    fn incr_flow(&mut self, p: nalgebra_glm::Vec2, val: f32) {
+        if self.oob(p) {
+            return;
+        }
         self.cells[p.x as usize + p.y as usize * self.map_width].flow += val
     }
 
@@ -285,7 +292,7 @@ impl PerlinMap {
         retval.z
     }
 
-    pub fn oob(&self, p: nalgebra_glm::Vec2) -> bool {
+    fn oob(&self, p: nalgebra_glm::Vec2) -> bool {
         p.x < 0.0 || p.y < 0.0 || p.x >= self.map_width as f32 || p.y >= self.map_width as f32
     }
 
@@ -335,7 +342,7 @@ impl PerlinMap {
                 let d = ((xo * xo + yo * yo) as f32).sqrt();
                 let shoreline = 0.5 * self.map_width as f32;
                 let bulge = -(d - shoreline) / shoreline;
-                self.cells[x + y * self.map_width].height = ((z - 0.3) * 4.0);
+                self.cells[x + y * self.map_width].height = ((z - 0.4) * 10.0);
             }
         }
     }
@@ -372,14 +379,14 @@ fn perlin2d(x: f32, y: f32, freq: f32, depth: i32, seed: i32) -> f32 {
     let mut ya = y * freq;
     let mut amp: f32 = 1.0;
     let mut fin: f32 = 0.0;
-    let mut div: f32 = 0.0;
+    let mut div: f32 = 256.0;
 
     for _ in 0..depth {
-        div += 256.0 * amp;
         fin += noise2d(xa, ya, seed) * amp;
-        amp /= 2.0;
         xa *= 2.0;
         ya *= 2.0;
+        amp *= 0.5;
+        div += 256.0 * amp;
     }
 
     fin / div
@@ -390,24 +397,32 @@ fn noise2d(x: f32, y: f32, seed: i32) -> f32 {
     let y_int = y as i32;
     let x_frac: f32 = x - (x_int as f32);
     let y_frac: f32 = y - (y_int as f32);
+
+    // Calculate noise values once
     let s = noise2(x_int, y_int, seed);
     let t = noise2(x_int + 1, y_int, seed);
     let u = noise2(x_int, y_int + 1, seed);
     let v = noise2(x_int + 1, y_int + 1, seed);
-    let low = smooth_inter(s as f32, t as f32, x_frac);
-    let high = smooth_inter(u as f32, v as f32, x_frac);
+
+    // Calculate x smothing
+    let low = smooth_inter(s, t, x_frac);
+    let high = smooth_inter(u, v, x_frac);
+
+    // Return y smoothing
     smooth_inter(low, high, y_frac)
 }
 
-fn noise2(x: i32, y: i32, seed: i32) -> i32 {
-    let tmp = HASH[((y + seed) % 256).abs() as usize];
-    HASH[((tmp + x) % 256).abs() as usize]
+fn noise2(x: i32, y: i32, seed: i32) -> f32 {
+    let tmp = HASH[((y + seed) & 0xFF) as usize];
+    HASH[((tmp as i32 + x) & 0xFF) as usize] as f32
 }
 
+#[inline]
 fn smooth_inter(x: f32, y: f32, s: f32) -> f32 {
     lin_inter(x, y, s * s * (3.0 - 2.0 * s))
 }
 
+#[inline]
 fn lin_inter(x: f32, y: f32, s: f32) -> f32 {
     x + s * (y - x)
 }

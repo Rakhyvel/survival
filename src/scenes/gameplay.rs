@@ -1,30 +1,30 @@
 use core::f32;
 
 use hecs::{Entity, World};
-use rand::{Rng, SeedableRng};
+use rand::SeedableRng;
 use sdl2::keyboard::Scancode;
 
 use crate::{
     engine::{
         bvh::{BVHNodeId, BVH},
         camera::{Camera, ProjectionKind},
+        chunked_map::ChunkedPerlinMap,
         objects::{create_program, Texture},
-        perlin::PerlinMap,
-        render3d::{self, Mesh, MeshManager, ModelComponent, OpenGl},
+        perlin::HeightMap,
+        render3d::{self, Mesh, MeshManager, ModelComponent, OpenGl, TextureId, TextureManager},
         shadow_map::{self, DirectionalLightSource},
-        sphere::Sphere,
     },
     App, Scene,
 };
 
-const MAP_WIDTH: usize = 512;
+const MAP_WIDTH: usize = 16384; // 16k is desireable!
 const CHUNK_SIZE: usize = 16;
 const UNIT_PER_METER: f32 = 0.05;
 
 pub const QUAD_DATA: &[u8] = include_bytes!("../../res/quad.obj");
-pub const CONE_DATA: &[u8] = include_bytes!("../../res/cone.obj");
+// pub const CONE_DATA: &[u8] = include_bytes!("../../res/cone.obj");
 pub const CUBE_DATA: &[u8] = include_bytes!("../../res/cube.obj");
-pub const BUSH_DATA: &[u8] = include_bytes!("../../res/bush.obj");
+// pub const BUSH_DATA: &[u8] = include_bytes!("../../res/bush.obj");
 
 struct Player {
     bvh_node_id: BVHNodeId,
@@ -36,7 +36,8 @@ pub struct Gameplay {
     world: World,
     open_gl: OpenGl,
     mesh_mgr: MeshManager,
-    map: PerlinMap,
+    texture_mgr: TextureManager,
+    map: ChunkedPerlinMap,
     bvh: BVH<Entity>,
     directional_light: DirectionalLightSource,
 
@@ -58,7 +59,17 @@ impl Scene for Gameplay {
             (app.ticks as f32 / (60.0 * 60.0 * 0.5 * MINUTES_PER_DAY) + TICKS_OFFSET).cos();
         self.directional_light.light_dir.y =
             (app.ticks as f32 / (60.0 * 60.0 * 0.5 * MINUTES_PER_DAY) + TICKS_OFFSET).sin();
+        if self.swap % 10 == 0 {
+            self.map.check_chunks(
+                self.position.xy(),
+                &mut self.world,
+                &mut self.bvh,
+                &mut self.mesh_mgr,
+                TextureId::new(0),
+            );
+        }
         self.update_view(app);
+        self.swap += 1;
     }
 
     fn render(&mut self, app: &App) {
@@ -69,15 +80,16 @@ impl Scene for Gameplay {
                 &mut self.world,
                 &mut self.open_gl,
                 &self.mesh_mgr,
+                &self.texture_mgr,
                 &self.bvh,
             );
         }
-        self.swap += 1;
         render3d::render_3d_models_system(
             &mut self.world,
             &mut self.open_gl,
             &self.directional_light,
             &self.mesh_mgr,
+            &self.texture_mgr,
             &self.bvh,
             app.window_size,
             self.debug,
@@ -91,25 +103,25 @@ impl Gameplay {
 
         println!("Setting up island...");
         let mut rng = rand::rngs::StdRng::from_entropy();
-        let mut map = PerlinMap::new(MAP_WIDTH, 0.03, rand::Rng::gen(&mut rng), 1.0);
-
-        map.normalize();
-        map.create_bulge();
-        map.create_shelf(0.6, 0.4);
+        let map = ChunkedPerlinMap::new(MAP_WIDTH, CHUNK_SIZE, 0.01, rand::Rng::gen(&mut rng), 1.0);
 
         println!("Eroding...");
         let start = std::time::Instant::now();
-        map.erode(MAP_WIDTH, rand::Rng::gen(&mut rng));
+        // map.erode(10000, rand::Rng::gen(&mut rng));
         println!("Erode time: {:?}", start.elapsed());
-
-        // map.create_shelf(0.6, 0.4);
 
         // Setup the mesh manager
         let mut mesh_mgr = MeshManager::new();
         let quad_mesh = mesh_mgr.add_mesh(Mesh::from_obj(QUAD_DATA));
-        let tree_mesh = mesh_mgr.add_mesh(Mesh::from_obj(CONE_DATA));
+        // let tree_mesh = mesh_mgr.add_mesh(Mesh::from_obj(CONE_DATA));
         let cube_mesh = mesh_mgr.add_mesh(Mesh::from_obj(CUBE_DATA));
-        let bush_mesh = mesh_mgr.add_mesh(Mesh::from_obj(BUSH_DATA));
+        // let bush_mesh = mesh_mgr.add_mesh(Mesh::from_obj(BUSH_DATA));
+
+        // Setup the texture manager
+        let mut texture_mgr = TextureManager::new();
+        let grass_texture = texture_mgr.add_texture(Texture::from_png("grass.png"));
+        // let tree_texture = texture_mgr.add_texture(Texture::from_png("tree.png"));
+        let water_texture = texture_mgr.add_texture(Texture::from_png("water.png"));
 
         // Setup the BVH
         let mut bvh = BVH::<Entity>::new();
@@ -122,9 +134,9 @@ impl Gameplay {
         let player_entity = world.spawn((
             ModelComponent::new(
                 cube_mesh,
+                grass_texture,
                 spawn_point,
                 nalgebra_glm::vec3(0.4, 0.4, 1.0),
-                Texture::from_png("res/grass.png"),
             ),
             Rock {},
         ));
@@ -146,148 +158,132 @@ impl Gameplay {
             )
             .unwrap();
 
-        for _ in 0..MAP_WIDTH * 1 {
-            // Add all the rocks
-            let mut position = nalgebra_glm::vec3(
-                rng.gen_range(0..MAP_WIDTH) as f32,
-                rng.gen_range(0..MAP_WIDTH) as f32,
-                0.0,
-            );
-            let scale = 0.2;
-            if bvh.iter_sphere(&Sphere::new(position, 1.0)).count() == 0 {
-                position.z = map.get_z_interpolated(position.xy());
-                let rock_entity = world.spawn((
-                    ModelComponent::new(
-                        cube_mesh,
-                        position,
-                        nalgebra_glm::vec3(scale, scale, scale),
-                        Texture::from_png("res/grass.png"),
-                    ),
-                    Rock {},
-                ));
-                bvh.insert(
-                    rock_entity,
-                    mesh_mgr
-                        .get_mesh(cube_mesh)
-                        .unwrap()
-                        .aabb
-                        .translate(position),
-                );
-            }
-        }
-        for _ in 0..(MAP_WIDTH) {
-            // Add all the trees
-            let mut attempts = 0;
-            loop {
-                let pos = nalgebra_glm::vec2(
-                    rng.gen::<f32>() * (MAP_WIDTH as f32 - 1.0),
-                    rng.gen::<f32>() * (MAP_WIDTH as f32 - 1.0),
-                );
-                let height = map.get_z_interpolated(pos);
-                let dot_prod = map.get_dot_prod(pos).abs();
-                let variation = rng.gen_range(0.0..1.0);
-                let scale = (30.0 + 70.0 * variation) * UNIT_PER_METER;
-                let scale_vec = nalgebra_glm::vec3(scale, scale, scale * 0.8);
-                let position = nalgebra_glm::vec3(pos.x, pos.y, height);
-                if height >= 1.0
-                    && dot_prod > 0.99
-                    // && map.flow(pos) > 8.0
-                    && bvh.iter_sphere(&Sphere::new(position, scale)).count() == 0
-                {
-                    let tree_entity = world.spawn((ModelComponent::new(
-                        tree_mesh,
-                        position,
-                        scale_vec,
-                        Texture::from_png("res/tree.png"),
-                    ),));
-                    bvh.insert(
-                        tree_entity,
-                        mesh_mgr
-                            .get_mesh(cube_mesh)
-                            .unwrap()
-                            .aabb
-                            .scale(scale_vec)
-                            .translate(position),
-                    );
-                    // bvh.remove(tree_bvh_id);
-                    break;
-                }
-                if attempts > 100 {
-                    break;
-                }
-                attempts += 1;
-            }
-        }
-        for _ in 0..(MAP_WIDTH) {
-            // Add all the bushes
-            let mut attempts = 0;
-            loop {
-                let pos = nalgebra_glm::vec2(
-                    rng.gen::<f32>() * (MAP_WIDTH as f32 - 1.0),
-                    rng.gen::<f32>() * (MAP_WIDTH as f32 - 1.0),
-                );
-                let height = map.get_z_interpolated(pos);
-                let dot_prod = map.get_dot_prod(pos).abs();
-                let variation = rng.gen_range(0.0..1.0);
-                let position = nalgebra_glm::vec3(pos.x, pos.y, height);
-                let scale = (3.5 + 7.0 * variation) * UNIT_PER_METER;
-                if height >= 1.0 && dot_prod >= 0.8
-                // && dot_prod <= 0.9
-                // && bvh.iter_sphere(&Sphere::new(position, scale)).count() == 0
-                //  && map.flow(pos) > 6.0
-                {
-                    let bush_entity = world.spawn((ModelComponent::new(
-                        bush_mesh,
-                        position,
-                        nalgebra_glm::vec3(scale, scale, scale * 0.8),
-                        Texture::from_png("res/tree.png"),
-                    ),));
-                    bvh.insert(
-                        bush_entity,
-                        mesh_mgr
-                            .get_mesh(cube_mesh)
-                            .unwrap()
-                            .aabb
-                            .translate(position),
-                    );
-                    break;
-                }
-                if attempts > 100 {
-                    break;
-                }
-                attempts += 1;
-            }
-        }
+        println!("Adding rocks");
+        // for _ in 0..MAP_WIDTH * 1 {
+        //     // Add all the rocks
+        //     let mut position = nalgebra_glm::vec3(
+        //         rng.gen_range(0..MAP_WIDTH) as f32,
+        //         rng.gen_range(0..MAP_WIDTH) as f32,
+        //         0.0,
+        //     );
+        //     let scale = 0.2;
+        //     if bvh.iter_sphere(&Sphere::new(position, 1.0)).count() == 0 {
+        //         position.z = 0.0; //map.height_interpolated(position.xy());
+        //         let rock_entity = world.spawn((
+        //             ModelComponent::new(
+        //                 cube_mesh,
+        //                 grass_texture,
+        //                 position,
+        //                 nalgebra_glm::vec3(scale, scale, scale),
+        //             ),
+        //             Rock {},
+        //         ));
+        //         bvh.insert(
+        //             rock_entity,
+        //             mesh_mgr
+        //                 .get_mesh(cube_mesh)
+        //                 .unwrap()
+        //                 .aabb
+        //                 .translate(position),
+        //         );
+        //     }
+        // }
 
-        // Add the chunks
-        for chunk_y in (0..(MAP_WIDTH)).step_by(CHUNK_SIZE) {
-            for chunk_x in (0..(MAP_WIDTH)).step_by(CHUNK_SIZE) {
-                let (i, v, n, u) = create_mesh(&map, chunk_x, chunk_y);
-                let grass_mesh = mesh_mgr.add_mesh(Mesh::new(i, vec![&v, &n, &u]));
-                let chunk_position = nalgebra_glm::vec3(chunk_x as f32, chunk_y as f32, 0.0);
-                let chunk_entity = world.spawn((ModelComponent::new(
-                    grass_mesh,
-                    chunk_position,
-                    nalgebra_glm::vec3(1.0, 1.0, 1.0),
-                    Texture::from_png("res/grass.png"),
-                ),));
-                bvh.insert(
-                    chunk_entity,
-                    mesh_mgr
-                        .get_mesh(grass_mesh)
-                        .unwrap()
-                        .aabb
-                        .translate(chunk_position),
-                );
-            }
-        }
+        println!("Adding trees");
+        // for _ in 0..(512) {
+        //     // Add all the trees
+        //     let mut attempts = 0;
+        //     loop {
+        //         let pos = nalgebra_glm::vec2(
+        //             rng.gen::<f32>() * (MAP_WIDTH as f32 - 1.0),
+        //             rng.gen::<f32>() * (MAP_WIDTH as f32 - 1.0),
+        //         );
+        //         let height = map.height_interpolated(pos);
+        //         let dot_prod = map.normal(pos).z;
+        //         let variation = rng.gen_range(0.0..1.0);
+        //         let scale = (30.0 + 70.0 * variation) * UNIT_PER_METER;
+        //         let scale_vec = nalgebra_glm::vec3(scale, scale, scale * 0.8);
+        //         let position = nalgebra_glm::vec3(pos.x, pos.y, height);
+        //         if height >= 1.0
+        //             && dot_prod > 0.99
+        //             // && map.flow(pos) > 8.0
+        //             && bvh.iter_sphere(&Sphere::new(position, scale)).count() == 0
+        //         {
+        //             let tree_entity = world.spawn((ModelComponent::new(
+        //                 tree_mesh,
+        //                 tree_texture,
+        //                 position,
+        //                 scale_vec,
+        //             ),));
+        //             bvh.insert(
+        //                 tree_entity,
+        //                 mesh_mgr
+        //                     .get_mesh(cube_mesh)
+        //                     .unwrap()
+        //                     .aabb
+        //                     .scale(scale_vec)
+        //                     .translate(position),
+        //             );
+        //             // bvh.remove(tree_bvh_id);
+        //             break;
+        //         }
+        //         if attempts > 100 {
+        //             break;
+        //         }
+        //         attempts += 1;
+        //     }
+        // }
 
-        let scale_vec = nalgebra_glm::vec3(1000.0, 1000.0, 1000.0);
+        println!("Adding bushes");
+        // for _ in 0..(512) {
+        //     // Add all the bushes
+        //     let mut attempts = 0;
+        //     loop {
+        //         let pos = nalgebra_glm::vec2(
+        //             rng.gen::<f32>() * (MAP_WIDTH as f32 - 1.0),
+        //             rng.gen::<f32>() * (MAP_WIDTH as f32 - 1.0),
+        //         );
+        //         let height = map.height_interpolated(pos);
+        //         let dot_prod = map.normal(pos).z;
+        //         let variation = rng.gen_range(0.0..1.0);
+        //         let position = nalgebra_glm::vec3(pos.x, pos.y, height);
+        //         let scale = (3.5 + 7.0 * variation) * UNIT_PER_METER;
+        //         if height >= 1.0 && dot_prod >= 0.8
+        //         // && dot_prod <= 0.9
+        //         // && bvh.iter_sphere(&Sphere::new(position, scale)).count() == 0
+        //         //  && map.flow(pos) > 6.0
+        //         {
+        //             let bush_entity = world.spawn((ModelComponent::new(
+        //                 bush_mesh,
+        //                 tree_texture,
+        //                 position,
+        //                 nalgebra_glm::vec3(scale, scale, scale * 0.8),
+        //             ),));
+        //             bvh.insert(
+        //                 bush_entity,
+        //                 mesh_mgr
+        //                     .get_mesh(cube_mesh)
+        //                     .unwrap()
+        //                     .aabb
+        //                     .translate(position),
+        //             );
+        //             break;
+        //         }
+        //         if attempts > 100 {
+        //             break;
+        //         }
+        //         attempts += 1;
+        //     }
+        // }
+
+        println!("Adding the chunks");
+
+        let scale_vec = nalgebra_glm::vec3(MAP_WIDTH as f32, MAP_WIDTH as f32, MAP_WIDTH as f32);
         let water_entity = world.spawn((ModelComponent::new(
             quad_mesh,
+            water_texture,
             nalgebra_glm::vec3(0.0, 0.0, 0.5),
             scale_vec,
-            Texture::from_png("res/water.png"),
         ),));
         bvh.insert(
             water_entity,
@@ -316,6 +312,7 @@ impl Gameplay {
             ),
             bvh,
             mesh_mgr,
+            texture_mgr,
             map,
             directional_light: DirectionalLightSource::new(
                 Camera::new(
@@ -355,6 +352,7 @@ impl Gameplay {
             player_entt = Some(entt);
             break;
         }
+        let zoom = 1.0;
 
         let curr_w_state = app.keys[Scancode::W as usize];
         let curr_s_state = app.keys[Scancode::S as usize];
@@ -362,7 +360,7 @@ impl Gameplay {
         let curr_d_state = app.keys[Scancode::D as usize];
         let curr_space_state = app.keys[Scancode::Space as usize];
         let walking = curr_w_state || curr_s_state || curr_a_state || curr_d_state;
-        let walk_speed: f32 = 1.6 * 2.5;
+        let walk_speed: f32 = 1.6 * 2.5 * zoom;
         let facing_vec = nalgebra_glm::vec3(1.0, 0.0, 0.0);
         let sideways_vec = nalgebra_glm::vec3(0.0, 1.0, 0.0);
         let mut player_vel_vec: nalgebra_glm::Vec3 = nalgebra_glm::zero();
@@ -393,7 +391,7 @@ impl Gameplay {
         }
         self.prev_space_state = curr_space_state;
         self.position += self.velocity;
-        self.position.z = self.map.get_z_interpolated(self.position.xy());
+        self.position.z = self.map.height_interpolated(self.position.xy());
 
         let mut model = self
             .world
@@ -414,123 +412,7 @@ impl Gameplay {
 
         self.open_gl
             .camera
-            .set_position(self.position + nalgebra_glm::vec3(138.5, 0.0, 80.0));
+            .set_position(self.position + nalgebra_glm::vec3(13.85, 0.0, 8.00) * zoom);
         self.open_gl.camera.set_lookat(self.position);
     }
-}
-
-fn create_mesh(
-    map: &PerlinMap,
-    chunk_x: usize,
-    chunk_y: usize,
-) -> (Vec<u32>, Vec<f32>, Vec<f32>, Vec<f32>) {
-    let mut indices = Vec::<u32>::new();
-    let mut vertices = Vec::<f32>::new();
-    let mut normals = Vec::<f32>::new();
-    let mut uv = Vec::<f32>::new();
-
-    let mut i = 0;
-    for y in 0..CHUNK_SIZE {
-        let y = y + chunk_y;
-        for x in 0..CHUNK_SIZE {
-            let x = x + chunk_x;
-            // Left triangle |\
-            let offsets = vec![(0.0, 0.0), (1.0, 0.0), (0.0, 1.0)];
-            add_triangle(
-                map,
-                &mut indices,
-                &mut vertices,
-                &mut normals,
-                &mut uv,
-                x as f32,
-                y as f32,
-                chunk_x as f32,
-                chunk_y as f32,
-                &offsets,
-                &mut i,
-            );
-
-            // Right triangle \|
-            let offsets = vec![(1.0, 0.0), (1.0, 1.0), (0.0, 1.0)];
-            add_triangle(
-                map,
-                &mut indices,
-                &mut vertices,
-                &mut normals,
-                &mut uv,
-                x as f32,
-                y as f32,
-                chunk_x as f32,
-                chunk_y as f32,
-                &offsets,
-                &mut i,
-            );
-        }
-    }
-
-    (indices, vertices, normals, uv)
-}
-
-fn add_triangle(
-    tiles: &PerlinMap,
-    indices: &mut Vec<u32>,
-    vertices: &mut Vec<f32>,
-    normals: &mut Vec<f32>,
-    uv: &mut Vec<f32>,
-    x: f32,
-    y: f32,
-    chunk_x: f32,
-    chunk_y: f32,
-    offsets: &Vec<(f32, f32)>,
-    i: &mut u32,
-) {
-    let mut sum_z = 0.0;
-    let tri_verts: Vec<nalgebra_glm::Vec3> = offsets
-        .iter()
-        .map(|(xo, yo)| {
-            let z = tiles.height(nalgebra_glm::vec2(x + xo, y + yo));
-            let mapval = nalgebra_glm::vec3(x + xo, y + yo, z);
-            sum_z += tiles.height(nalgebra_glm::vec2(x + xo, y + yo));
-            add_vertex(vertices, x + xo - chunk_x, y + yo - chunk_y, z);
-            indices.push(*i);
-            *i += 1;
-            mapval
-        })
-        .collect();
-
-    let edge1 = tri_verts[1] - tri_verts[0];
-    let edge2 = tri_verts[2] - tri_verts[0];
-    let normal = nalgebra_glm::cross(&edge1, &edge2).normalize();
-    for _ in 0..3 {
-        normals.push(normal.x);
-        normals.push(normal.y);
-        normals.push(normal.z);
-    }
-    // 0 = steep
-    // 1 = flat
-    let dot_prod = nalgebra_glm::dot(&normal, &nalgebra_glm::vec3(0.0, 0.0, 1.0));
-
-    let avg_z = sum_z / 3.0;
-    let uv_offset: f32 = if avg_z < 0.5 || (avg_z < 0.9 * dot_prod && 0.9 < dot_prod) {
-        3.0 / 9.0
-    } else if dot_prod < 0.9 {
-        5.0 / 9.0
-    } else {
-        0.0
-    };
-    for _ in 0..3 {
-        add_uv(uv, uv_offset, 0.0);
-    }
-}
-
-fn add_vertex(vertices: &mut Vec<f32>, x: f32, y: f32, z: f32) {
-    vertices.push(x);
-    vertices.push(y);
-    vertices.push(z);
-}
-
-fn add_uv(uv: &mut Vec<f32>, x: f32, y: f32) {
-    uv.push(x);
-    uv.push(y);
-    uv.push(0.0);
 }

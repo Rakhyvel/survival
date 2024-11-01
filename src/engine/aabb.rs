@@ -131,8 +131,8 @@ impl AABB {
 
     pub fn expand_to_fit(&mut self, points: impl IntoIterator<Item = nalgebra_glm::Vec3>) {
         for corner in points.into_iter() {
-            self.min = nalgebra_glm::min2(&self.min, &corner.xyz());
-            self.max = nalgebra_glm::max2(&self.max, &corner.xyz());
+            self.min = nalgebra_glm::min2(&self.min, &corner);
+            self.max = nalgebra_glm::max2(&self.max, &corner);
         }
     }
 

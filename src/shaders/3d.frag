@@ -83,8 +83,8 @@ void main()
     vec3 light_tinted = mix(material_color, material_color * LightColor, clamp(4.0 * (0.25 - l.z), 0, 1));
     vec3 color = mix(shadow, light_tinted, cosTheta * shadow_factor);
 
-    // color = color / (color + vec3(1.0));
-    // color = pow(color, vec3(1.0 / 2.2));
+    color = color / (color + vec3(1.0));
+    color = pow(color, vec3(1.0 / 2.2));
 
     Color = vec4(color, texture_alpha);
 }
