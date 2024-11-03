@@ -348,19 +348,8 @@ impl ChunkedPerlinMap {
         seed: i32,
         amplitude: f32,
     ) -> Self {
-        let mut chunks: Vec<Chunk> = vec![];
-        let side_chunks = map_width / chunk_width;
-        for y in 0..side_chunks {
-            for x in 0..side_chunks {
-                chunks.push(Chunk::new(
-                    chunk_width,
-                    nalgebra_glm::vec2((x * chunk_width) as f32, (y * chunk_width) as f32),
-                    level_of_detail,
-                    seed,
-                    amplitude,
-                ));
-            }
-        }
+        let chunks =
+            Self::generate_chunks(map_width, chunk_width, level_of_detail, seed, amplitude);
         Self {
             chunks,
             map_width,
@@ -395,6 +384,40 @@ impl ChunkedPerlinMap {
             let chunk = self.chunk_at_mut(chunk_pos);
             chunk.generate(world, bvh, mesh_mgr, texture_mgr);
         }
+    }
+
+    pub fn reset_seed(&mut self, seed: i32) {
+        self.seed = seed;
+        self.chunks = Self::generate_chunks(
+            self.map_width,
+            self.chunk_width,
+            self.level_of_detail,
+            self.seed,
+            self.amplitude,
+        );
+    }
+
+    fn generate_chunks(
+        map_width: usize,
+        chunk_width: usize,
+        level_of_detail: f32,
+        seed: i32,
+        amplitude: f32,
+    ) -> Vec<Chunk> {
+        let mut chunks: Vec<Chunk> = vec![];
+        let side_chunks = map_width / chunk_width;
+        for y in 0..side_chunks {
+            for x in 0..side_chunks {
+                chunks.push(Chunk::new(
+                    chunk_width,
+                    nalgebra_glm::vec2((x * chunk_width) as f32, (y * chunk_width) as f32),
+                    level_of_detail,
+                    seed,
+                    amplitude,
+                ));
+            }
+        }
+        chunks
     }
 
     fn chunk_at(&self, p: nalgebra_glm::Vec2) -> &Chunk {

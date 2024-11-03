@@ -18,3 +18,6 @@ rand = "0.8.4"
 
 # For reading .obj files into meshes
 obj-rs = "*"
+
+# For time, lol
+chrono = "0.4"

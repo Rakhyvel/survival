@@ -49,7 +49,6 @@ pub struct Gameplay {
     debug: bool,
 
     update_swap: u32,
-    render_swap: u32,
 }
 
 impl Scene for Gameplay {
@@ -60,32 +59,27 @@ impl Scene for Gameplay {
             (app.ticks as f32 / (60.0 * 60.0 * 0.5 * MINUTES_PER_DAY) + TICKS_OFFSET).cos();
         self.directional_light.light_dir.y =
             (app.ticks as f32 / (60.0 * 60.0 * 0.5 * MINUTES_PER_DAY) + TICKS_OFFSET).sin();
-        if self.update_swap % 10 == 0 {
-            self.map.check_chunks(
-                self.position.xy(),
-                &mut self.world,
-                &mut self.bvh,
-                &mut self.mesh_mgr,
-                &self.texture_mgr,
-            );
-        }
+        self.map.check_chunks(
+            self.position.xy(),
+            &mut self.world,
+            &mut self.bvh,
+            &mut self.mesh_mgr,
+            &self.texture_mgr,
+        );
         self.update_view(app);
+        self.update_clickers(app);
         self.update_swap += 1;
     }
 
     fn render(&mut self, app: &App) {
-        if self.render_swap % 1 == 0 {
-            // ok this is funny, just don't render the sun shadows so much! lmao
-            shadow_map::directional_light_system(
-                &mut self.directional_light,
-                &mut self.world,
-                &mut self.open_gl,
-                &self.mesh_mgr,
-                &self.texture_mgr,
-                &self.bvh,
-            );
-        }
-        self.render_swap += 1;
+        shadow_map::directional_light_system(
+            &mut self.directional_light,
+            &mut self.world,
+            &mut self.open_gl,
+            &self.mesh_mgr,
+            &self.texture_mgr,
+            &self.bvh,
+        );
         render3d::render_3d_models_system(
             &mut self.world,
             &mut self.open_gl,
@@ -103,14 +97,9 @@ impl Gameplay {
     pub fn new() -> Self {
         let mut world = World::new();
 
-        println!("Setting up island...");
         let mut rng = rand::rngs::StdRng::from_entropy();
-        let map = ChunkedPerlinMap::new(MAP_WIDTH, CHUNK_SIZE, 0.01, rand::Rng::gen(&mut rng), 1.0);
-
-        println!("Eroding...");
-        let start = std::time::Instant::now();
-        // map.erode(10000, rand::Rng::gen(&mut rng));
-        println!("Erode time: {:?}", start.elapsed());
+        let mut map =
+            ChunkedPerlinMap::new(MAP_WIDTH, CHUNK_SIZE, 0.01, rand::Rng::gen(&mut rng), 1.0);
 
         // Setup the mesh manager
         let mut mesh_mgr = MeshManager::new();
@@ -126,14 +115,25 @@ impl Gameplay {
         texture_mgr.add_texture(Texture::from_png("tree.png"), "tree");
         texture_mgr.add_texture(Texture::from_png("rock.png"), "rock");
 
-        // Setup the BVH
         let mut bvh = BVH::<Entity>::new();
-
-        // bvh.walk_tree();
 
         let spawn_point =
             nalgebra_glm::vec3(MAP_WIDTH as f32 / 2.0 + 1.0, MAP_WIDTH as f32 / 2.0, 2.5);
+        loop {
+            map.check_chunks(
+                spawn_point.xy(),
+                &mut world,
+                &mut bvh,
+                &mut mesh_mgr,
+                &texture_mgr,
+            );
+            if map.height_interpolated(spawn_point.xy()) > 2.0 {
+                break;
+            }
+            map.reset_seed(rand::Rng::gen(&mut rng));
+        }
 
+        // Add player
         let player_entity = world.spawn((
             ModelComponent::new(
                 cube_mesh,
@@ -161,6 +161,7 @@ impl Gameplay {
             )
             .unwrap();
 
+        // Add water plane
         let scale_vec = nalgebra_glm::vec3(MAP_WIDTH as f32, MAP_WIDTH as f32, MAP_WIDTH as f32);
         let water_entity = world.spawn((ModelComponent::new(
             quad_mesh,
@@ -218,7 +219,7 @@ impl Gameplay {
                 )
                 .unwrap(),
                 nalgebra_glm::vec3(-0.1, 0.0, 0.86),
-                8192,
+                MAP_WIDTH as i32,
             ),
             position: spawn_point,
             velocity: nalgebra_glm::vec3(0.0, 0.0, 0.0),
@@ -226,7 +227,6 @@ impl Gameplay {
             prev_space_state: false,
             debug: false,
             update_swap: 0,
-            render_swap: 0,
         }
     }
 
@@ -298,5 +298,11 @@ impl Gameplay {
             .camera
             .set_position(self.position + nalgebra_glm::vec3(13.85, 0.0, 8.00) * zoom);
         self.open_gl.camera.set_lookat(self.position);
+    }
+
+    fn update_clickers(&mut self, app: &App) {
+        if app.mouse_left_clicked {
+            println!("mouse down! let's go!");
+        }
     }
 }

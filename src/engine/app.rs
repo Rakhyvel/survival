@@ -25,6 +25,10 @@ pub struct App {
     pub mouse_rel_y: i32,
     pub mouse_left_down: bool,
     pub mouse_right_down: bool,
+    prev_mouse_left_down: bool,
+    prev_mouse_right_down: bool,
+    pub mouse_left_clicked: bool,
+    pub mouse_right_clicked: bool,
     pub mouse_wheel: f32,
 }
 
@@ -80,6 +84,10 @@ pub fn run(
         mouse_rel_y: 0,
         mouse_left_down: false,
         mouse_right_down: false,
+        prev_mouse_left_down: false,
+        prev_mouse_right_down: false,
+        mouse_left_clicked: false,
+        mouse_right_clicked: false,
         mouse_wheel: 0.0,
         seconds: 0.0,
         ticks: 0,
@@ -155,6 +163,8 @@ impl App {
         self.mouse_rel_x = 0;
         self.mouse_rel_y = 0;
         self.mouse_wheel = 0.0;
+        self.prev_mouse_left_down = self.mouse_left_down;
+        self.prev_mouse_right_down = self.mouse_right_down;
     }
 
     fn poll_input(&mut self, sdl_context: &Sdl) {
@@ -214,6 +224,9 @@ impl App {
                 _ => {}
             }
         }
+
+        self.mouse_left_clicked = !self.prev_mouse_left_down && self.mouse_left_clicked;
+        self.mouse_right_clicked = !self.prev_mouse_right_down && self.mouse_right_clicked;
     }
 }
 
@@ -231,6 +244,10 @@ impl Default for App {
             mouse_rel_y: Default::default(),
             mouse_left_down: Default::default(),
             mouse_right_down: Default::default(),
+            prev_mouse_left_down: Default::default(),
+            prev_mouse_right_down: Default::default(),
+            mouse_left_clicked: Default::default(),
+            mouse_right_clicked: Default::default(),
             mouse_wheel: Default::default(),
         }
     }
