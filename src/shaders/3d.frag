@@ -65,11 +65,7 @@ void main()
     // Direction of the light, in camera space
     vec3 l = normalize( LightDirection_cameraspace );
     // Direction to the eye, in camera space
-    float cosTheta = clamp(dot(n, l), 0, 1);
-    // Direction towards the sky
-    vec3 s = vec3(0.0, 0.0, 1.0);
-    // Direction to the eye, in camera space
-    float skyCosTheta = clamp(dot(n, s), 0, 1);
+    float cosTheta = clamp(dot(n, vec3(l.x, l.y, abs(l.z))), 0, 1);
 
     vec3 LightColor = vec3(
       255.0 / 255.0, 
@@ -79,9 +75,15 @@ void main()
 
     float shadow_factor = calc_shadow_factor();
 
-    vec3 shadow = (0.05 + 0.35 * clamp(l.z, 0, 1)) * material_color * vec3(0.352, 0.9, 0.9);
-    vec3 light_tinted = mix(material_color, material_color * LightColor, clamp(4.0 * (0.25 - l.z), 0, 1));
-    vec3 color = mix(shadow, light_tinted, cosTheta * shadow_factor);
+    float glow_factor = clamp(1.0 / (30 * l.z * l.z + 1), 0, 1);
+    vec3 shadow = 0.4 * material_color * mix(vec3(0.3, 0.3, 1.0), vec3(0.5, 0.3, 0.3), glow_factor);
+    vec3 light_tinted = mix(material_color, material_color * LightColor, glow_factor);
+    
+    float levels = 4.0;
+    float diff = cosTheta * shadow_factor;
+    diff = floor(diff * levels) / levels;
+
+    vec3 color = mix(shadow, light_tinted, diff);
 
     color = color / (color + vec3(1.0));
     color = pow(color, vec3(1.0 / 2.2));

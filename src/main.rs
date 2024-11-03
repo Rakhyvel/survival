@@ -17,9 +17,15 @@ use scenes::gameplay::Gameplay;
 //     - [ ] font cacheing
 // - [ ] wild berries that appear on bushes
 //     - [ ] clicking and holding puts them into your hand
+//         > maybe when you hover over a bush, it highlights the bush with an action billboard that's like "(p) Pick berry", and pressing p picks the berry
 //     - [ ] can eat them once they're in your hand
 // - [ ] can go up to a body of water, click, and drink
+// - [ ] wild vegetables (potatoes). can plant them into tilled land, have them grow, pick them.
 //
+// ## Crafting and building
+// - [ ] can take two stones, click them together (?), you get a list of stone tools you can make
+// - [ ] can use tools by clicking, with the tool in your dominant hand
+// - [ ] can press (b) to open up list of structures you can build, then you can place a blueprint. blueprints must be given the right materials, then they're built.
 
 fn main() -> Result<(), String> {
     run(

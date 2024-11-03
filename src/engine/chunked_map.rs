@@ -1,15 +1,17 @@
 use hecs::{Entity, World};
-use rand::SeedableRng;
+use rand::{Rng, SeedableRng};
 
 use super::{
     bvh::BVH,
     perlin::{HeightMap, PerlinMap},
-    render3d::{Mesh, MeshManager, ModelComponent, TextureId},
+    render3d::{Mesh, MeshManager, ModelComponent, TextureId, TextureManager},
+    sphere::Sphere,
 };
 
 #[derive(Default)]
 pub struct Chunk {
     map: PerlinMap,
+    hydration: PerlinMap,
     chunk_width: usize,
     pos: nalgebra_glm::Vec2,
     generated: bool,
@@ -30,6 +32,8 @@ pub struct ChunkedPerlinMap {
     amplitude: f32,
 }
 
+struct Tree {}
+
 impl Chunk {
     pub fn new(
         chunk_width: usize,
@@ -40,6 +44,7 @@ impl Chunk {
     ) -> Self {
         Self {
             map: PerlinMap::new(chunk_width + 1),
+            hydration: PerlinMap::new(chunk_width + 1),
             chunk_width,
             pos,
             generated: false,
@@ -54,21 +59,35 @@ impl Chunk {
         world: &mut World,
         bvh: &mut BVH<Entity>,
         mesh_mgr: &mut MeshManager,
-        grass_texture: TextureId,
+        texture_mgr: &TextureManager,
     ) {
         if !self.generated {
-            self.map
-                .generate(self.level_of_detail, self.seed, self.amplitude, self.pos);
+            self.map.generate(
+                self.level_of_detail,
+                10,
+                self.seed,
+                self.amplitude,
+                self.pos,
+            );
+            self.hydration
+                .generate(self.level_of_detail, 2, self.seed, self.amplitude, self.pos);
 
             self.map.create_bulge();
             self.map.create_shelf(0.6, 0.4);
 
             let mut rng = rand::rngs::StdRng::from_entropy();
-            self.map.erode(64, rand::Rng::gen(&mut rng));
+            // self.map.erode(64, rand::Rng::gen(&mut rng));
+
+            let grass_texture = texture_mgr.get_id_from_name("grass").unwrap();
+            let tree_texture = texture_mgr.get_id_from_name("tree").unwrap();
+            let rock_texture = texture_mgr.get_id_from_name("rock").unwrap();
+            let tree_mesh = mesh_mgr.get_id_from_name("tree").unwrap();
+            let bush_mesh = mesh_mgr.get_id_from_name("bush").unwrap();
+            let cube_mesh = mesh_mgr.get_id_from_name("cube").unwrap();
 
             let pos_with_z = nalgebra_glm::vec3(self.pos.x, self.pos.y, 0.0);
             let (i, v, n, u) = self.create_mesh();
-            let grass_mesh = mesh_mgr.add_mesh(Mesh::new(i, vec![&v, &n, &u]));
+            let grass_mesh = mesh_mgr.add_mesh(Mesh::new(i, vec![&v, &n, &u]), None);
             let chunk_entity = world.spawn((ModelComponent::new(
                 grass_mesh,
                 grass_texture,
@@ -78,13 +97,118 @@ impl Chunk {
             bvh.insert(
                 chunk_entity,
                 mesh_mgr
-                    .get_mesh(grass_mesh)
+                    .get_mesh_from_id(grass_mesh)
                     .unwrap()
                     .aabb
                     .translate(pos_with_z),
             );
 
-            // TODO: Add trees, rocks, etc
+            // TODO: This should be OUT!
+
+            for _ in 0..2 {
+                // Add all the rocks
+                let mut position = nalgebra_glm::vec3(
+                    rng.gen_range(0..self.chunk_width) as f32,
+                    rng.gen_range(0..self.chunk_width) as f32,
+                    0.0,
+                );
+                let scale = 0.2;
+                position.z = self.map.get_z_interpolated(position.xy());
+                if position.z < 1.0 {
+                    continue;
+                }
+                position.x += self.pos.x;
+                position.y += self.pos.y;
+                let rock_entity = world.spawn((ModelComponent::new(
+                    cube_mesh,
+                    rock_texture,
+                    position,
+                    nalgebra_glm::vec3(scale, scale, scale),
+                ),));
+                bvh.insert(
+                    rock_entity,
+                    mesh_mgr
+                        .get_mesh_from_id(cube_mesh)
+                        .unwrap()
+                        .aabb
+                        .translate(position),
+                );
+            }
+
+            for _ in 0..16 {
+                // Add all the trees
+                let pos = nalgebra_glm::vec2(
+                    rng.gen::<f32>() * (self.chunk_width as f32 - 1.0),
+                    rng.gen::<f32>() * (self.chunk_width as f32 - 1.0),
+                );
+                let height = self.map.get_z_interpolated(pos);
+                let hydro_normal = self.hydration.get_normal(pos);
+                let variation: f32 = rng.gen_range(0.0..1.0);
+                let scale = (1.4 + 1.0 * variation);
+                let scale_vec = nalgebra_glm::vec3(scale, scale, scale * 0.8);
+                let position = nalgebra_glm::vec3(pos.x + self.pos.x, pos.y + self.pos.y, height);
+                if height >= 1.0
+                    && hydro_normal.y > 0.0
+                    && 0.5 < self.hydration.height(pos)
+                    && bvh
+                        .iter_sphere(&Sphere::new(position, scale))
+                        .filter(|entity| world.get::<&Tree>(*entity).is_ok())
+                        .count()
+                        == 0
+                {
+                    let tree_entity = world.spawn((
+                        ModelComponent::new(tree_mesh, tree_texture, position, scale_vec),
+                        Tree {},
+                    ));
+                    bvh.insert(
+                        tree_entity,
+                        mesh_mgr
+                            .get_mesh_from_id(cube_mesh)
+                            .unwrap()
+                            .aabb
+                            .scale(scale_vec)
+                            .translate(position),
+                    );
+                }
+            }
+
+            for _ in 0..16 {
+                // Add all the bushes
+                let pos = nalgebra_glm::vec2(
+                    rng.gen::<f32>() * (self.chunk_width as f32 - 1.0),
+                    rng.gen::<f32>() * (self.chunk_width as f32 - 1.0),
+                );
+                let height = self.map.get_z_interpolated(pos);
+                let hydro_normal = self.hydration.get_normal(pos);
+                let variation: f32 = rng.gen_range(0.0..1.0);
+                let scale = (0.4 + 1.0 * variation);
+                let scale_vec = nalgebra_glm::vec3(scale, scale, scale * 0.8);
+                let position = nalgebra_glm::vec3(pos.x + self.pos.x, pos.y + self.pos.y, height);
+                if height >= 1.0
+                    && variation < (hydro_normal.y + 0.5) * 1.0
+                    && bvh
+                        .iter_sphere(&Sphere::new(position, scale))
+                        .filter(|entity| world.get::<&Tree>(*entity).is_ok())
+                        .count()
+                        == 0
+                {
+                    let tree_entity = world.spawn((ModelComponent::new(
+                        bush_mesh,
+                        tree_texture,
+                        position,
+                        scale_vec,
+                    ),));
+                    bvh.insert(
+                        tree_entity,
+                        mesh_mgr
+                            .get_mesh_from_id(bush_mesh)
+                            .unwrap()
+                            .aabb
+                            .scale(scale_vec)
+                            .translate(position),
+                    );
+                }
+            }
 
             self.generated = true;
         }
@@ -197,11 +321,7 @@ impl Chunk {
         } else {
             0.0
         };
-        let v_offset = if self.flow(nalgebra_glm::vec2(x, y)) > 0.1 && avg_z >= 1.0 {
-            2.0
-        } else {
-            0.0
-        };
+        let v_offset = 0.0;
         for _ in 0..3 {
             add_uv(uv, u_offset, v_offset);
         }
@@ -257,7 +377,7 @@ impl ChunkedPerlinMap {
         world: &mut World,
         bvh: &mut BVH<Entity>,
         mesh_mgr: &mut MeshManager,
-        grass_texture: TextureId,
+        texture_mgr: &TextureManager,
     ) {
         let chunk_offsets = [
             nalgebra_glm::vec2(-1.0, 1.0),
@@ -273,7 +393,7 @@ impl ChunkedPerlinMap {
         for chunk_offset in chunk_offsets {
             let chunk_pos = chunk_offset * (self.chunk_width as f32) + p;
             let chunk = self.chunk_at_mut(chunk_pos);
-            chunk.generate(world, bvh, mesh_mgr, grass_texture);
+            chunk.generate(world, bvh, mesh_mgr, texture_mgr);
         }
     }
 

@@ -138,8 +138,10 @@ pub fn directional_light_system(
     for model_id in bvh.iter_frustrum(&frustum2, false) {
         rendered += 1;
         let model = world.get::<&ModelComponent>(model_id).unwrap();
-        let mesh = mesh_manager.get_mesh(model.mesh_id).unwrap();
-        let texture = texture_manager.get_texture(model.texture_id).unwrap();
+        let mesh = mesh_manager.get_mesh_from_id(model.mesh_id).unwrap();
+        let texture = texture_manager
+            .get_texture_from_id(model.texture_id)
+            .unwrap();
         let model_matrix = model.get_model_matrix();
 
         texture.activate(gl::TEXTURE0);

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::App;
 
 use super::{
@@ -56,8 +58,10 @@ pub fn render_3d_models_system(
     for model_id in bvh.iter_frustrum(camera_frustrum, debug) {
         rendered += 1;
         let model = world.get::<&ModelComponent>(model_id).unwrap();
-        let mesh = mesh_manager.get_mesh(model.mesh_id).unwrap();
-        let texture = texture_manager.get_texture(model.texture_id).unwrap();
+        let mesh = mesh_manager.get_mesh_from_id(model.mesh_id).unwrap();
+        let texture = texture_manager
+            .get_texture_from_id(model.texture_id)
+            .unwrap();
         let model_matrix = model.get_model_matrix();
 
         texture.activate(gl::TEXTURE0);
@@ -88,6 +92,7 @@ pub struct ModelComponent {
 /// Contains a collection of meshes, and associates them with a MeshId.
 pub struct MeshManager {
     meshes: Vec<Mesh>,
+    keys: HashMap<&'static str, MeshId>,
 }
 
 /// Opaque type used by a MeshManager to associate meshes.
@@ -104,6 +109,7 @@ pub struct Mesh {
 
 pub struct TextureManager {
     textures: Vec<Texture>,
+    keys: HashMap<&'static str, TextureId>,
 }
 
 /// Opaque type used by a TextureManager to associate textures.
@@ -133,17 +139,31 @@ enum GeometryDataIndex {
 
 impl MeshManager {
     pub fn new() -> Self {
-        Self { meshes: vec![] }
+        Self {
+            meshes: vec![],
+            keys: HashMap::new(),
+        }
     }
 
-    pub fn add_mesh(&mut self, mesh: Mesh) -> MeshId {
-        let id = self.meshes.len();
+    pub fn add_mesh(&mut self, mesh: Mesh, name: Option<&'static str>) -> MeshId {
+        let id = MeshId::new(self.meshes.len());
         self.meshes.push(mesh);
-        MeshId::new(id)
+        if name.is_some() {
+            self.keys.insert(name.unwrap(), id);
+        }
+        id
     }
 
-    pub fn get_mesh(&self, id: MeshId) -> Option<&Mesh> {
+    pub fn get_mesh_from_id(&self, id: MeshId) -> Option<&Mesh> {
         self.meshes.get(id.as_usize())
+    }
+
+    pub fn get_id_from_name(&self, name: &'static str) -> Option<MeshId> {
+        self.keys.get(name).copied()
+    }
+
+    pub fn get_mesh(&self, name: &'static str) -> Option<&Mesh> {
+        self.get_mesh_from_id(self.get_id_from_name(name).unwrap())
     }
 }
 
@@ -189,7 +209,7 @@ impl ModelComponent {
 
     pub fn get_aabb(&self, mesh_manager: &MeshManager) -> AABB {
         mesh_manager
-            .get_mesh(self.mesh_id)
+            .get_mesh_from_id(self.mesh_id)
             .unwrap()
             .aabb
             .scale(self.scale)
@@ -308,17 +328,29 @@ impl Mesh {
 
 impl TextureManager {
     pub fn new() -> Self {
-        Self { textures: vec![] }
+        Self {
+            textures: vec![],
+            keys: HashMap::new(),
+        }
     }
 
-    pub fn add_texture(&mut self, texture: Texture) -> TextureId {
-        let id = self.textures.len();
+    pub fn add_texture(&mut self, texture: Texture, name: &'static str) -> TextureId {
+        let id = TextureId::new(self.textures.len());
         self.textures.push(texture);
-        TextureId::new(id)
+        self.keys.insert(name, id);
+        id
     }
 
-    pub fn get_texture(&self, id: TextureId) -> Option<&Texture> {
+    pub fn get_texture_from_id(&self, id: TextureId) -> Option<&Texture> {
         self.textures.get(id.as_usize())
+    }
+
+    pub fn get_id_from_name(&self, name: &'static str) -> Option<TextureId> {
+        self.keys.get(name).copied()
+    }
+
+    pub fn get_texture(&self, name: &'static str) -> Option<&Texture> {
+        self.get_texture_from_id(self.get_id_from_name(name).unwrap())
     }
 }
 

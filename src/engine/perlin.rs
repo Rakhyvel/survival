@@ -118,6 +118,7 @@ impl PerlinMap {
     pub fn generate(
         &mut self,
         level_of_detail: f32,
+        depth: i32,
         seed: i32,
         amplitude: f32,
         offset: nalgebra_glm::Vec2,
@@ -130,7 +131,7 @@ impl PerlinMap {
                         x as f32 + offset.x,
                         y as f32 + offset.y,
                         level_of_detail,
-                        10,
+                        depth,
                         seed,
                     ) * amplitude,
                     flow: 0.0,
@@ -342,7 +343,7 @@ impl PerlinMap {
                 let d = ((xo * xo + yo * yo) as f32).sqrt();
                 let shoreline = 0.5 * self.map_width as f32;
                 let bulge = -(d - shoreline) / shoreline;
-                self.cells[x + y * self.map_width].height = ((z - 0.4) * 10.0);
+                self.cells[x + y * self.map_width].height = (((z - 0.5).powf(3.0) * 150.0) + 0.55);
             }
         }
     }
