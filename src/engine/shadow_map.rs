@@ -60,6 +60,7 @@ pub fn directional_light_system(
         );
         gl::Enable(gl::CULL_FACE);
         gl::CullFace(gl::FRONT);
+        gl::Enable(gl::DEPTH_TEST);
         gl::Clear(gl::DEPTH_BUFFER_BIT)
     }
 

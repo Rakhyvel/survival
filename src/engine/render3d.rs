@@ -40,6 +40,7 @@ pub fn render_3d_models_system(
         gl::CullFace(gl::BACK);
         gl::Enable(gl::DEPTH_TEST);
         gl::StencilOp(gl::KEEP, gl::REPLACE, gl::REPLACE);
+        gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT);
     }
 
     let (light_view_matrix, light_proj_matrix) =
@@ -126,8 +127,7 @@ pub fn render_3d_outlines_system(
 
     unsafe {
         gl::StencilMask(0xFF);
-        gl::Disable(gl::STENCIL_TEST);
-        gl::Enable(gl::DEPTH_TEST);
+        gl::Enable(gl::STENCIL_TEST);
         gl::StencilFunc(gl::ALWAYS, 1, 0xFF);
     }
 }
