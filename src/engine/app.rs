@@ -225,8 +225,8 @@ impl App {
             }
         }
 
-        self.mouse_left_clicked = !self.prev_mouse_left_down && self.mouse_left_clicked;
-        self.mouse_right_clicked = !self.prev_mouse_right_down && self.mouse_right_clicked;
+        self.mouse_left_clicked = !self.prev_mouse_left_down && self.mouse_left_down;
+        self.mouse_right_clicked = !self.prev_mouse_right_down && self.mouse_right_down;
     }
 }
 

@@ -59,7 +59,8 @@ impl Camera {
         let view_matrix = nalgebra_glm::look_at(&self.position, &self.lookat, &self.up);
         let proj_matrix = match self.projection_kind {
             ProjectionKind::Perspective { fov } => {
-                nalgebra_glm::perspective(2.0, fov, 0.01, 9.296e+9)
+                // TODO: Take in aspect, though I don't really care!
+                nalgebra_glm::perspective(800.0 / 600.0, fov, 0.1, 1000.0)
             }
             ProjectionKind::Orthographic {
                 left,
@@ -78,6 +79,14 @@ impl Camera {
     pub fn inv_proj_view(&self) -> nalgebra_glm::Mat4 {
         let proj_view_matrix = self.proj_matrix * self.view_matrix;
         nalgebra_glm::inverse(&proj_view_matrix)
+    }
+
+    pub fn inv_proj_and_view(&self) -> (nalgebra_glm::Mat4, nalgebra_glm::Mat4) {
+        (
+            // TODO: Store these, probably
+            nalgebra_glm::inverse(&self.proj_matrix),
+            nalgebra_glm::inverse(&self.view_matrix),
+        )
     }
 
     pub fn frustum(&self) -> Frustrum {

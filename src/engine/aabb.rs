@@ -1,3 +1,4 @@
+use core::f32;
 use std::cmp::max;
 
 use super::{
@@ -97,13 +98,27 @@ impl AABB {
     }
 
     pub fn raycast(&self, ray: &Ray) -> bool {
-        let t_min = self.min - ray.origin;
-        let t_max = self.max - ray.origin;
-        let t1 = nalgebra_glm::min2(&t_min, &t_max);
-        let t2 = nalgebra_glm::max2(&t_min, &t_max);
-        let t_near = f32::max(f32::max(t1.x, t1.y), t1.z);
-        let t_far = f32::min(f32::min(t1.x, t1.y), t1.z);
-        t_near < t_far
+        let inv = nalgebra_glm::vec3(1.0 / ray.dir.x, 1.0 / ray.dir.y, 1.0 / ray.dir.z);
+
+        let tx1 = (self.min.x - ray.origin.x) * inv.x;
+        let tx2 = (self.max.x - ray.origin.x) * inv.x;
+
+        let mut tmin = tx1.min(tx2);
+        let mut tmax = tx1.max(tx2);
+
+        let ty1 = (self.min.y - ray.origin.y) * inv.y;
+        let ty2 = (self.max.y - ray.origin.y) * inv.y;
+
+        tmin = tmin.max(ty1.min(ty2));
+        tmax = tmax.min(ty1.max(ty2));
+
+        let tz1 = (self.min.z - ray.origin.z) * inv.z;
+        let tz2 = (self.max.z - ray.origin.z) * inv.z;
+
+        tmin = tmin.max(tz1.min(tz2));
+        tmax = tmax.min(tz1.max(tz2));
+
+        tmax >= tmin && tmax >= 0.0
     }
 
     pub fn bounding_sphere(&self) -> Sphere {
@@ -179,6 +194,15 @@ impl AABB {
         result = result && other.max.y <= self.max.y;
         result = result && other.max.z <= self.max.z;
         result
+    }
+
+    pub fn contains_point(&self, point: nalgebra_glm::Vec3) -> bool {
+        self.min.x <= point.x
+            && self.min.y <= point.y
+            && self.min.z <= point.z
+            && self.max.x <= point.x
+            && self.max.y <= point.y
+            && self.max.z <= point.z
     }
 
     pub fn corners(&self) -> [nalgebra_glm::Vec3; 8] {

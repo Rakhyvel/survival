@@ -57,7 +57,7 @@ pub fn render_3d_models_system(
     let mut rendered = 0;
     for model_id in bvh.iter_frustrum(camera_frustrum, debug) {
         rendered += 1;
-        let model = world.get::<&ModelComponent>(model_id).unwrap();
+        let mut model = world.get::<&mut ModelComponent>(model_id).unwrap();
         let mesh = mesh_manager.get_mesh_from_id(model.mesh_id).unwrap();
         let texture = texture_manager
             .get_texture_from_id(model.texture_id)
@@ -72,8 +72,6 @@ pub fn render_3d_models_system(
             .depth_map
             .associate_uniform(open_gl.program.id(), 1, "shadow_map");
 
-        // let light_space_mvp = light_proj_view;
-
         let (view_matrix, proj_matrix) = open_gl.camera.view_proj_matrices();
         mesh.draw(open_gl, model_matrix, view_matrix, proj_matrix);
     }
@@ -87,6 +85,7 @@ pub struct ModelComponent {
     position: nalgebra_glm::Vec3,
     scale: nalgebra_glm::Vec3,
     model_matrix: nalgebra_glm::Mat4,
+    pub shown: bool,
 }
 
 /// Contains a collection of meshes, and associates them with a MeshId.
@@ -190,6 +189,7 @@ impl ModelComponent {
             position,
             scale,
             model_matrix: Self::construct_model_matrix(&position, &scale),
+            shown: true,
         }
     }
 
@@ -371,10 +371,10 @@ impl OpenGl {
 
     pub fn set_shader_uniforms(&self, sun_dir: nalgebra_glm::Vec3, resolution: nalgebra_glm::Vec2) {
         self.program.set();
-        let u_resolution = self.get_uniform("u_resolution").unwrap();
+        // let u_resolution = self.get_uniform("u_resolution").unwrap();
         let u_sun_dir = self.get_uniform("u_sun_dir").unwrap();
         unsafe {
-            gl::Uniform2f(u_resolution.id, resolution.x, resolution.y);
+            // gl::Uniform2f(u_resolution.id, resolution.x, resolution.y);
             gl::Uniform3f(u_sun_dir.id, sun_dir.x, sun_dir.y, sun_dir.z);
         }
     }

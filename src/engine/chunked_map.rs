@@ -1,6 +1,8 @@
 use hecs::{Entity, World};
 use rand::{Rng, SeedableRng};
 
+use crate::scenes::gameplay::Rock;
+
 use super::{
     bvh::BVH,
     perlin::{HeightMap, PerlinMap},
@@ -105,7 +107,7 @@ impl Chunk {
 
             // TODO: This should be OUT!
 
-            for _ in 0..2 {
+            for _ in 0..4 {
                 // Add all the rocks
                 let mut position = nalgebra_glm::vec3(
                     rng.gen_range(0..self.chunk_width) as f32,
@@ -113,29 +115,29 @@ impl Chunk {
                     0.0,
                 );
                 let scale = 0.2;
+                let scale_vec = nalgebra_glm::vec3(scale, scale, scale);
                 position.z = self.map.get_z_interpolated(position.xy());
                 if position.z < 1.0 {
                     continue;
                 }
                 position.x += self.pos.x;
                 position.y += self.pos.y;
-                let rock_entity = world.spawn((ModelComponent::new(
-                    cube_mesh,
-                    rock_texture,
-                    position,
-                    nalgebra_glm::vec3(scale, scale, scale),
-                ),));
+                let rock_entity = world.spawn((
+                    ModelComponent::new(cube_mesh, rock_texture, position, scale_vec),
+                    Rock {},
+                ));
                 bvh.insert(
                     rock_entity,
                     mesh_mgr
                         .get_mesh_from_id(cube_mesh)
                         .unwrap()
                         .aabb
+                        .scale(scale_vec * 0.5)
                         .translate(position),
                 );
             }
 
-            for _ in 0..16 {
+            for _ in 0..0 {
                 // Add all the trees
                 let pos = nalgebra_glm::vec2(
                     rng.gen::<f32>() * (self.chunk_width as f32 - 1.0),
@@ -172,7 +174,7 @@ impl Chunk {
                 }
             }
 
-            for _ in 0..16 {
+            for _ in 0..0 {
                 // Add all the bushes
                 let pos = nalgebra_glm::vec2(
                     rng.gen::<f32>() * (self.chunk_width as f32 - 1.0),
@@ -386,15 +388,14 @@ impl ChunkedPerlinMap {
         }
     }
 
-    pub fn reset_seed(&mut self, seed: i32) {
-        self.seed = seed;
-        self.chunks = Self::generate_chunks(
-            self.map_width,
-            self.chunk_width,
-            self.level_of_detail,
-            self.seed,
-            self.amplitude,
-        );
+    pub fn chunkless_height(&mut self, pos: nalgebra_glm::Vec2) -> f32 {
+        let side_chunks = self.map_width / self.chunk_width;
+        let chunk_p =
+            nalgebra_glm::floor(&(pos / self.chunk_width as f32)) * self.chunk_width as f32;
+        let mut map = PerlinMap::new(self.chunk_width);
+        map.generate(self.level_of_detail, 10, self.seed, self.amplitude, chunk_p);
+        let retval = map.get_z_interpolated(pos - chunk_p);
+        retval
     }
 
     fn generate_chunks(

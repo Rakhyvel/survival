@@ -1,6 +1,5 @@
 #version 330 core
 
-uniform vec2 u_resolution;
 uniform vec3 u_sun_dir;
 uniform mat4 u_model_matrix;
 uniform mat4 u_view_matrix;
@@ -21,12 +20,6 @@ out vec4 light_space_pos; // For shadow mapping
 void main()
 {
     vec4 uv = u_proj_matrix * u_view_matrix * u_model_matrix * vec4(Position, 1.0);
-
-    if (u_resolution.x > u_resolution.y) {
-        uv.x *= u_resolution.y / u_resolution.x;
-    } else {
-        uv.y *= u_resolution.x / u_resolution.y;
-    }
 
     // Vertex normal, converted to camera space
 	Normal_cameraspace = Normal_modelspace;

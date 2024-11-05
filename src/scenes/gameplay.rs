@@ -11,6 +11,7 @@ use crate::{
         chunked_map::ChunkedPerlinMap,
         objects::{create_program, Texture},
         perlin::HeightMap,
+        ray::Ray,
         render3d::{self, Mesh, MeshManager, ModelComponent, OpenGl, TextureManager},
         shadow_map::{self, DirectionalLightSource},
     },
@@ -30,7 +31,7 @@ struct Player {
     bvh_node_id: BVHNodeId,
 }
 
-struct Rock {}
+pub struct Rock {}
 
 pub struct Gameplay {
     world: World,
@@ -120,27 +121,16 @@ impl Gameplay {
         let spawn_point =
             nalgebra_glm::vec3(MAP_WIDTH as f32 / 2.0 + 1.0, MAP_WIDTH as f32 / 2.0, 2.5);
         loop {
-            map.check_chunks(
-                spawn_point.xy(),
-                &mut world,
-                &mut bvh,
-                &mut mesh_mgr,
-                &texture_mgr,
-            );
-            if map.height_interpolated(spawn_point.xy()) > 2.0 {
+            if map.chunkless_height(spawn_point.xy()) > 0.74 {
                 break;
             }
-            map.reset_seed(rand::Rng::gen(&mut rng));
+            map = ChunkedPerlinMap::new(MAP_WIDTH, CHUNK_SIZE, 0.01, rand::Rng::gen(&mut rng), 1.0);
         }
 
         // Add player
+        let scale_vec = nalgebra_glm::vec3(1.0, 1.0, 1.0) * 0.5;
         let player_entity = world.spawn((
-            ModelComponent::new(
-                cube_mesh,
-                grass_texture,
-                spawn_point,
-                nalgebra_glm::vec3(0.4, 0.4, 1.0),
-            ),
+            ModelComponent::new(cube_mesh, grass_texture, spawn_point, scale_vec),
             Rock {},
         ));
         let player_node_id = bvh.insert(
@@ -149,8 +139,17 @@ impl Gameplay {
                 .get_mesh("cube")
                 .unwrap()
                 .aabb
-                .scale(nalgebra_glm::vec3(0.4, 0.4, 1.0))
+                .scale(scale_vec)
                 .translate(spawn_point),
+        );
+        println!(
+            "{:?}",
+            mesh_mgr
+                .get_mesh("cube")
+                .unwrap()
+                .aabb
+                .scale(scale_vec * 0.5)
+                .translate(spawn_point)
         );
         world
             .insert(
@@ -262,7 +261,6 @@ impl Gameplay {
         }
         self.debug = false;
         if curr_space_state && !self.prev_space_state {
-            self.debug = true;
             println!(
                 "{:?} {:?}",
                 self.open_gl.camera.position(),
@@ -297,12 +295,37 @@ impl Gameplay {
         self.open_gl
             .camera
             .set_position(self.position + nalgebra_glm::vec3(13.85, 0.0, 8.00) * zoom);
-        self.open_gl.camera.set_lookat(self.position);
+        self.open_gl
+            .camera
+            .set_lookat(self.position + nalgebra_glm::vec3(0.0, 0.0, 1.00));
     }
 
     fn update_clickers(&mut self, app: &App) {
-        if app.mouse_left_clicked {
-            println!("mouse down! let's go!");
+        let ndc_x = (2.0 * app.mouse_x as f32) / app.window_size.x as f32 - 1.0;
+        let ndc_y = 1.0 - (2.0 * (app.mouse_y as f32 * 0.75 + 150.0)) / (app.window_size.y) as f32;
+
+        let clip_coordinates = nalgebra_glm::vec4(ndc_x, ndc_y, -0.0, 1.0);
+
+        let (inv_proj, inv_view) = self.open_gl.camera.inv_proj_and_view();
+        let mut eye_coords = inv_proj * clip_coordinates;
+        eye_coords /= eye_coords.w;
+
+        let world_coords = inv_view * eye_coords;
+        let dir = (world_coords.xyz() - self.open_gl.camera.position()).normalize();
+
+        let ray = Ray {
+            dir,
+            origin: self.open_gl.camera.position(),
+        };
+        let hovereds: Vec<Entity> = self
+            .bvh
+            .iter_ray(&ray)
+            .filter(|entity| self.world.get::<&Rock>(*entity).is_ok())
+            .collect();
+        for entity in hovereds {
+            if app.mouse_left_clicked {
+                println!("{:?}", entity);
+            }
         }
     }
 }
