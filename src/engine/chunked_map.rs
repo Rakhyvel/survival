@@ -6,7 +6,7 @@ use crate::scenes::gameplay::Rock;
 use super::{
     bvh::BVH,
     perlin::{HeightMap, PerlinMap},
-    render3d::{Mesh, MeshManager, ModelComponent, TextureId, TextureManager},
+    render_core::{Mesh, MeshManager, ModelComponent, TextureManager},
     sphere::Sphere,
 };
 

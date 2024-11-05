@@ -6,7 +6,7 @@ use super::{
     camera::{Camera, ProjectionKind},
     frustrum::Frustrum,
     objects::{Fbo, Program, Texture},
-    render3d::{MeshManager, ModelComponent, OpenGl, TextureManager},
+    render_core::{MeshManager, ModelComponent, OpenGl, TextureManager},
 };
 
 #[derive(Default)]

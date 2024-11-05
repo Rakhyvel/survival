@@ -23,7 +23,11 @@ pub(crate) mod plane;
 #[allow(unused)]
 pub(crate) mod ray;
 #[allow(unused)]
+pub(crate) mod render2d;
+#[allow(unused)]
 pub(crate) mod render3d;
+#[allow(unused)]
+pub(crate) mod render_core;
 #[allow(unused)]
 pub(crate) mod shadow_map;
 #[allow(unused)]

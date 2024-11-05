@@ -12,7 +12,8 @@ use crate::{
         objects::{create_program, Program, Texture},
         perlin::HeightMap,
         ray::Ray,
-        render3d::{self, Mesh, MeshManager, ModelComponent, OpenGl, TextureManager},
+        render2d, render3d,
+        render_core::{Mesh, MeshManager, ModelComponent, OpenGl, TextureManager},
         shadow_map::{self, DirectionalLightSource},
     },
     App, Scene,
@@ -37,7 +38,9 @@ pub struct Rock {}
 
 pub struct Gameplay {
     world: World,
+    gui_world: World,
     open_gl: OpenGl,
+    gui_open_gl: OpenGl,
     mesh_mgr: MeshManager,
     texture_mgr: TextureManager,
     map: ChunkedPerlinMap,
@@ -115,12 +118,22 @@ impl Scene for Gameplay {
             &self.mesh_mgr,
             &self.bvh,
         );
+
+        // render2d::render_2d_models_system(
+        //     &mut self.gui_world,
+        //     &mut self.gui_open_gl,
+        //     &self.mesh_mgr,
+        //     &self.texture_mgr,
+        //     app.window_size,
+        // );
     }
 }
 
 impl Gameplay {
     pub fn new() -> Self {
         let mut world = World::new();
+
+        let gui_world = World::new();
 
         let mut rng = rand::rngs::StdRng::from_entropy();
         let mut map =
@@ -206,6 +219,7 @@ impl Gameplay {
 
         Self {
             world,
+            gui_world,
             open_gl: OpenGl::new(
                 Camera::new(
                     spawn_point,
@@ -216,6 +230,26 @@ impl Gameplay {
                 create_program(
                     include_str!("../shaders/3d.vert"),
                     include_str!("../shaders/3d.frag"),
+                )
+                .unwrap(),
+            ),
+            gui_open_gl: OpenGl::new(
+                Camera::new(
+                    nalgebra_glm::vec3(0.0, 0.0, 0.0),
+                    nalgebra_glm::vec3(0.0, 0.0, 1.0),
+                    nalgebra_glm::vec3(0.0, 1.0, 0.0),
+                    ProjectionKind::Orthographic {
+                        left: -1.0,
+                        right: 1.0,
+                        bottom: -1.0,
+                        top: 1.0,
+                        near: 0.1,
+                        far: 10.0,
+                    },
+                ),
+                create_program(
+                    include_str!("../shaders/2d.vert"),
+                    include_str!("../shaders/2d.frag"),
                 )
                 .unwrap(),
             ),
