@@ -37,7 +37,9 @@ pub fn render_3d_models_system(
         gl::Viewport(0, 0, int_screen_resolution.x, int_screen_resolution.x);
         gl::Enable(gl::CULL_FACE);
         gl::CullFace(gl::BACK);
-        gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
+        gl::Enable(gl::DEPTH_TEST);
+        gl::StencilOp(gl::KEEP, gl::REPLACE, gl::REPLACE);
+        gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT);
     }
 
     let (light_view_matrix, light_proj_matrix) =
@@ -55,6 +57,7 @@ pub fn render_3d_models_system(
 
     let camera_frustrum = &open_gl.camera.frustum();
     let mut rendered = 0;
+
     for model_id in bvh.iter_frustrum(camera_frustrum, debug) {
         rendered += 1;
         let mut model = world.get::<&mut ModelComponent>(model_id).unwrap();
@@ -63,6 +66,17 @@ pub fn render_3d_models_system(
             .get_texture_from_id(model.texture_id)
             .unwrap();
         let model_matrix = model.get_model_matrix();
+
+        if model.outlined {
+            unsafe {
+                gl::StencilFunc(gl::ALWAYS, 1, 0xFF);
+                gl::StencilMask(0xFF);
+            }
+        } else {
+            unsafe {
+                gl::StencilMask(0x00);
+            }
+        }
 
         texture.activate(gl::TEXTURE0);
         texture.associate_uniform(open_gl.program.id(), 0, "texture0");
@@ -78,6 +92,45 @@ pub fn render_3d_models_system(
     // println!("{:?}", rendered);
 }
 
+pub fn render_3d_outlines_system(
+    world: &mut World,
+    open_gl: &mut OpenGl,
+    outline_program: &Program,
+    mesh_manager: &MeshManager,
+    bvh: &BVH<Entity>,
+) {
+    unsafe {
+        gl::StencilFunc(gl::NOTEQUAL, 1, 0xFF);
+        gl::StencilMask(0x00);
+        gl::Enable(gl::STENCIL_TEST);
+        gl::Disable(gl::DEPTH_TEST);
+    }
+    outline_program.set();
+    let camera_frustrum = &open_gl.camera.frustum();
+
+    for model_id in bvh.iter_frustrum(camera_frustrum, false) {
+        let mut model = world.get::<&mut ModelComponent>(model_id).unwrap();
+        if !model.outlined {
+            continue;
+        }
+        let mesh = mesh_manager.get_mesh_from_id(model.mesh_id).unwrap();
+
+        let old_scale = model.scale;
+        model.set_scale(old_scale * 1.2);
+        let model_matrix = model.get_model_matrix();
+        model.set_scale(old_scale);
+
+        let (view_matrix, proj_matrix) = open_gl.camera.view_proj_matrices();
+        mesh.draw(open_gl, model_matrix, view_matrix, proj_matrix);
+    }
+
+    unsafe {
+        gl::StencilMask(0xFF);
+        gl::Enable(gl::STENCIL_TEST);
+        gl::StencilFunc(gl::ALWAYS, 1, 0xFF);
+    }
+}
+
 /// An actual model, with geometry, a position, scale, rotation, and texture.
 pub struct ModelComponent {
     pub mesh_id: MeshId,
@@ -86,6 +139,7 @@ pub struct ModelComponent {
     scale: nalgebra_glm::Vec3,
     model_matrix: nalgebra_glm::Mat4,
     pub shown: bool,
+    pub outlined: bool,
 }
 
 /// Contains a collection of meshes, and associates them with a MeshId.
@@ -190,6 +244,7 @@ impl ModelComponent {
             scale,
             model_matrix: Self::construct_model_matrix(&position, &scale),
             shown: true,
+            outlined: false,
         }
     }
 

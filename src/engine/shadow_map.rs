@@ -42,17 +42,6 @@ impl DirectionalLightSource {
     }
 }
 
-// pub struct ShadowSystem;
-// impl<'a> System<'a> for ShadowSystem {
-//     type SystemData = (
-//         ReadStorage<'a, MeshComponent>,
-//         ReadStorage<'a, PositionComponent>,
-//         ReadStorage<'a, CastsShadowComponent>,
-//         Read<'a, MeshMgrResource>,
-//         Read<'a, OpenGlResource>,
-//         Write<'a, SunResource>,
-//     );
-
 pub fn directional_light_system(
     directional_light: &mut DirectionalLightSource,
     world: &mut World,

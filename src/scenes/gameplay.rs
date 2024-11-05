@@ -9,7 +9,7 @@ use crate::{
         bvh::{BVHNodeId, BVH},
         camera::{Camera, ProjectionKind},
         chunked_map::ChunkedPerlinMap,
-        objects::{create_program, Texture},
+        objects::{create_program, Program, Texture},
         perlin::HeightMap,
         ray::Ray,
         render3d::{self, Mesh, MeshManager, ModelComponent, OpenGl, TextureManager},
@@ -21,6 +21,8 @@ use crate::{
 const MAP_WIDTH: usize = 16384; // 16k is desireable!
 const CHUNK_SIZE: usize = 16;
 const UNIT_PER_METER: f32 = 0.05;
+const MINUTES_PER_DAY: f32 = 10.0;
+const TICKS_OFFSET: f32 = 0.0;
 
 pub const QUAD_DATA: &[u8] = include_bytes!("../../res/quad.obj");
 pub const CUBE_DATA: &[u8] = include_bytes!("../../res/cube.obj");
@@ -41,6 +43,7 @@ pub struct Gameplay {
     map: ChunkedPerlinMap,
     bvh: BVH<Entity>,
     directional_light: DirectionalLightSource,
+    outline_program: Program,
 
     // Player stuff
     position: nalgebra_glm::Vec3,
@@ -54,8 +57,6 @@ pub struct Gameplay {
 
 impl Scene for Gameplay {
     fn update(&mut self, app: &App) {
-        const MINUTES_PER_DAY: f32 = 10.0;
-        const TICKS_OFFSET: f32 = 0.0;
         self.directional_light.light_dir.z =
             (app.ticks as f32 / (60.0 * 60.0 * 0.5 * MINUTES_PER_DAY) + TICKS_OFFSET).cos();
         self.directional_light.light_dir.y =
@@ -73,6 +74,22 @@ impl Scene for Gameplay {
     }
 
     fn render(&mut self, app: &App) {
+        // sky system
+        let model_t = app.ticks as f32 / (60.0 * 60.0 * 0.5 * MINUTES_PER_DAY) + TICKS_OFFSET;
+        unsafe {
+            let day_color = nalgebra_glm::vec3(172.0, 205.0, 248.0);
+            let night_color = nalgebra_glm::vec3(5.0, 6.0, 7.0);
+            let red_color = nalgebra_glm::vec3(124.0, 102.0, 86.0);
+            let do_color = if model_t.cos() > 0.0 {
+                day_color
+            } else {
+                night_color
+            };
+            let dnf = model_t.sin().powf(100.0);
+            let result = dnf * red_color + (1.0 - dnf) * do_color;
+            gl::ClearColor(result.x / 255., result.y / 255., result.z / 255., 1.0);
+        }
+
         shadow_map::directional_light_system(
             &mut self.directional_light,
             &mut self.world,
@@ -90,6 +107,13 @@ impl Scene for Gameplay {
             &self.bvh,
             app.window_size,
             self.debug,
+        );
+        render3d::render_3d_outlines_system(
+            &mut self.world,
+            &mut self.open_gl,
+            &self.outline_program,
+            &self.mesh_mgr,
+            &self.bvh,
         );
     }
 }
@@ -128,11 +152,13 @@ impl Gameplay {
         }
 
         // Add player
-        let scale_vec = nalgebra_glm::vec3(1.0, 1.0, 1.0) * 0.5;
-        let player_entity = world.spawn((
-            ModelComponent::new(cube_mesh, grass_texture, spawn_point, scale_vec),
-            Rock {},
-        ));
+        let scale_vec = nalgebra_glm::vec3(0.2, 0.2, 1.0);
+        let player_entity = world.spawn((ModelComponent::new(
+            cube_mesh,
+            grass_texture,
+            spawn_point,
+            scale_vec,
+        ),));
         let player_node_id = bvh.insert(
             player_entity,
             mesh_mgr
@@ -148,7 +174,7 @@ impl Gameplay {
                 .get_mesh("cube")
                 .unwrap()
                 .aabb
-                .scale(scale_vec * 0.5)
+                .scale(scale_vec)
                 .translate(spawn_point)
         );
         world
@@ -220,6 +246,12 @@ impl Gameplay {
                 nalgebra_glm::vec3(-0.1, 0.0, 0.86),
                 MAP_WIDTH as i32,
             ),
+            outline_program: create_program(
+                include_str!("../shaders/3d.vert"),
+                include_str!("../shaders/3d-color.frag"),
+            )
+            .unwrap(),
+
             position: spawn_point,
             velocity: nalgebra_glm::vec3(0.0, 0.0, 0.0),
 
@@ -301,8 +333,16 @@ impl Gameplay {
     }
 
     fn update_clickers(&mut self, app: &App) {
+        if app.mouse_left_clicked {
+            println!("{:?} {:?}", app.mouse_x, app.mouse_y);
+        }
+        let inv_aspect = app.window_size.y as f32 / app.window_size.x as f32;
         let ndc_x = (2.0 * app.mouse_x as f32) / app.window_size.x as f32 - 1.0;
-        let ndc_y = 1.0 - (2.0 * (app.mouse_y as f32 * 0.75 + 150.0)) / (app.window_size.y) as f32;
+        let ndc_y = 1.0
+            - (2.0
+                * (app.mouse_y as f32 * inv_aspect
+                    + app.window_size.y as f32 * (1.0 - inv_aspect)))
+                / app.window_size.y as f32;
 
         let clip_coordinates = nalgebra_glm::vec4(ndc_x, ndc_y, -0.0, 1.0);
 
@@ -317,12 +357,23 @@ impl Gameplay {
             dir,
             origin: self.open_gl.camera.position(),
         };
+
+        // Set all outlines to false
+        for (_, model) in &mut self.world.query::<&mut ModelComponent>() {
+            model.outlined = false;
+        }
+
+        // Set hovered outlines to true
         let hovereds: Vec<Entity> = self
             .bvh
             .iter_ray(&ray)
             .filter(|entity| self.world.get::<&Rock>(*entity).is_ok())
             .collect();
         for entity in hovereds {
+            self.world
+                .get::<&mut ModelComponent>(entity)
+                .unwrap()
+                .outlined = true;
             if app.mouse_left_clicked {
                 println!("{:?}", entity);
             }
