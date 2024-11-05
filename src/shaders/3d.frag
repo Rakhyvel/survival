@@ -79,7 +79,7 @@ void main()
     vec3 shadow = 0.4 * material_color * mix(vec3(0.3, 0.3, 1.0), vec3(0.5, 0.3, 0.3), glow_factor);
     vec3 light_tinted = mix(material_color, material_color * LightColor, glow_factor);
     
-    float levels = 4.0;
+    float levels = 16.0;
     float diff = cosTheta * shadow_factor;
     diff = floor(diff * levels) / levels;
 

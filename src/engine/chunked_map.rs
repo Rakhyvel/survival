@@ -137,7 +137,7 @@ impl Chunk {
                 );
             }
 
-            for _ in 0..0 {
+            for _ in 0..4 {
                 // Add all the trees
                 let pos = nalgebra_glm::vec2(
                     rng.gen::<f32>() * (self.chunk_width as f32 - 1.0),
@@ -174,7 +174,7 @@ impl Chunk {
                 }
             }
 
-            for _ in 0..0 {
+            for _ in 0..4 {
                 // Add all the bushes
                 let pos = nalgebra_glm::vec2(
                     rng.gen::<f32>() * (self.chunk_width as f32 - 1.0),

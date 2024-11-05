@@ -126,7 +126,8 @@ pub fn render_3d_outlines_system(
 
     unsafe {
         gl::StencilMask(0xFF);
-        gl::Enable(gl::STENCIL_TEST);
+        gl::Disable(gl::STENCIL_TEST);
+        gl::Enable(gl::DEPTH_TEST);
         gl::StencilFunc(gl::ALWAYS, 1, 0xFF);
     }
 }
