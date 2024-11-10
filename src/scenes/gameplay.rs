@@ -12,7 +12,8 @@ use crate::{
         objects::{create_program, Program, Texture},
         perlin::HeightMap,
         ray::Ray,
-        render2d, render3d,
+        render2d::{self, Rectangle},
+        render3d,
         render_core::{Mesh, MeshManager, ModelComponent, OpenGl, TextureManager},
         shadow_map::{self, DirectionalLightSource},
     },
@@ -26,6 +27,7 @@ const MINUTES_PER_DAY: f32 = 10.0;
 const TICKS_OFFSET: f32 = 0.0;
 
 pub const QUAD_DATA: &[u8] = include_bytes!("../../res/quad.obj");
+pub const QUAD_XY_DATA: &[u8] = include_bytes!("../../res/quad-xy.obj");
 pub const CUBE_DATA: &[u8] = include_bytes!("../../res/cube.obj");
 pub const CONE_DATA: &[u8] = include_bytes!("../../res/cone.obj");
 pub const BUSH_DATA: &[u8] = include_bytes!("../../res/bush.obj");
@@ -119,13 +121,24 @@ impl Scene for Gameplay {
             &self.bvh,
         );
 
-        // render2d::render_2d_models_system(
-        //     &mut self.gui_world,
-        //     &mut self.gui_open_gl,
-        //     &self.mesh_mgr,
-        //     &self.texture_mgr,
-        //     app.window_size,
-        // );
+        for i in 0..80 {
+            render2d::render_rectangle(
+                Rectangle {
+                    pos: nalgebra_glm::vec2(
+                        i as f32 * 10.0 + 5.0,
+                        ((i as f32 + app.ticks as f32) * 0.1).cos() * 30.0 + 600.0,
+                    ),
+                    size: nalgebra_glm::vec2(10.0, 600.0),
+                    texture_id: self.texture_mgr.get_id_from_name("grass").unwrap(),
+                    uv: nalgebra_glm::vec2(6.0, 0.0),
+                    uv_size: nalgebra_glm::vec2(1.0, 1.0),
+                },
+                &mut self.gui_open_gl,
+                &self.mesh_mgr,
+                &self.texture_mgr,
+                app.window_size,
+            );
+        }
     }
 }
 
@@ -142,6 +155,7 @@ impl Gameplay {
         // Setup the mesh manager
         let mut mesh_mgr = MeshManager::new();
         let quad_mesh = mesh_mgr.add_mesh(Mesh::from_obj(QUAD_DATA), Some("quad"));
+        mesh_mgr.add_mesh(Mesh::from_obj(QUAD_XY_DATA), Some("quad-xy"));
         let cube_mesh = mesh_mgr.add_mesh(Mesh::from_obj(CUBE_DATA), Some("cube"));
         mesh_mgr.add_mesh(Mesh::from_obj(CONE_DATA), Some("tree"));
         mesh_mgr.add_mesh(Mesh::from_obj(BUSH_DATA), Some("bush"));
@@ -361,22 +375,15 @@ impl Gameplay {
         self.open_gl
             .camera
             .set_position(self.position + nalgebra_glm::vec3(13.85, 0.0, 8.00) * zoom);
-        self.open_gl
-            .camera
-            .set_lookat(self.position + nalgebra_glm::vec3(0.0, 0.0, 1.00));
+        self.open_gl.camera.set_lookat(self.position);
     }
 
     fn update_clickers(&mut self, app: &App) {
         if app.mouse_left_clicked {
             println!("{:?} {:?}", app.mouse_x, app.mouse_y);
         }
-        let inv_aspect = app.window_size.y as f32 / app.window_size.x as f32;
         let ndc_x = (2.0 * app.mouse_x as f32) / app.window_size.x as f32 - 1.0;
-        let ndc_y = 1.0
-            - (2.0
-                * (app.mouse_y as f32 * inv_aspect
-                    + app.window_size.y as f32 * (1.0 - inv_aspect)))
-                / app.window_size.y as f32;
+        let ndc_y = 1.0 - (2.0 * (app.mouse_y as f32)) / app.window_size.y as f32;
 
         let clip_coordinates = nalgebra_glm::vec4(ndc_x, ndc_y, -0.0, 1.0);
 

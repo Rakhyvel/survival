@@ -9,11 +9,10 @@ layout (location = 1) in vec3 Normal_modelspace;
 layout (location = 2) in vec3 texture_coord;
 layout (location = 3) in vec3 Color;
 
-out vec3 texCoord;
+out vec3 uv;
 
 void main()
 {
-    vec4 uv = u_proj_matrix * u_view_matrix * u_model_matrix * vec4(Position, 1.0);
-    gl_Position = vec4(uv.xy, 0.0, 1.0);
-    texCoord = texture_coord;
+    gl_Position = u_proj_matrix * u_view_matrix * u_model_matrix * vec4(Position, 1.0);
+    uv = texture_coord;
 }

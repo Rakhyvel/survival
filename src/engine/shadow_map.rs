@@ -31,6 +31,7 @@ impl DirectionalLightSource {
         let frame_buffer = Fbo::new();
         frame_buffer.bind();
         depth_map.post_bind();
+        frame_buffer.unbind();
         Self {
             shadow_camera,
             shadow_program,

@@ -467,6 +467,24 @@ impl Texture {
             gl::Uniform1i(gl::GetUniformLocation(program_id, uniform.as_ptr()), unit)
         }
     }
+
+    pub fn get_dimensions(&self) -> Option<(i32, i32)> {
+        let mut width: GLint = 0;
+        let mut height: GLint = 0;
+
+        unsafe {
+            gl::BindTexture(gl::TEXTURE_2D, self.id);
+            gl::GetTexLevelParameteriv(gl::TEXTURE_2D, 0, gl::TEXTURE_WIDTH, &mut width);
+            gl::GetTexLevelParameteriv(gl::TEXTURE_2D, 0, gl::TEXTURE_HEIGHT, &mut height);
+            gl::BindTexture(gl::TEXTURE_2D, 0);
+        }
+
+        if width > 0 && height > 0 {
+            Some((width, height))
+        } else {
+            None
+        }
+    }
 }
 
 impl Drop for Texture {

@@ -40,7 +40,7 @@ impl Camera {
         up: nalgebra_glm::Vec3,
         projection_kind: ProjectionKind,
     ) -> Self {
-        Self {
+        let mut retval = Self {
             position,
             lookat,
             up,
@@ -48,7 +48,9 @@ impl Camera {
             aspect_ratio: 1.0,
             view_matrix: nalgebra_glm::identity(),
             proj_matrix: nalgebra_glm::identity(),
-        }
+        };
+        retval.regen_view_proj_matrices();
+        retval
     }
 
     pub fn view_proj_matrices(&self) -> (nalgebra_glm::Mat4, nalgebra_glm::Mat4) {

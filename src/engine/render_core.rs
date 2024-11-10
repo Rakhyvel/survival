@@ -131,6 +131,10 @@ impl ModelComponent {
         self.regen_model_matrix();
     }
 
+    pub fn get_position(&self) -> nalgebra_glm::Vec3 {
+        self.position
+    }
+
     pub fn set_scale(&mut self, scale: nalgebra_glm::Vec3) {
         self.scale = scale;
         self.regen_model_matrix();
@@ -322,6 +326,10 @@ impl OpenGl {
 
     pub fn program(&self) -> GLuint {
         self.program.id()
+    }
+
+    pub fn set_program(&self) {
+        self.program.set();
     }
 }
 

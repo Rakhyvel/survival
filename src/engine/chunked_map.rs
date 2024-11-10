@@ -370,21 +370,13 @@ impl ChunkedPerlinMap {
         mesh_mgr: &mut MeshManager,
         texture_mgr: &TextureManager,
     ) {
-        let chunk_offsets = [
-            nalgebra_glm::vec2(-1.0, 1.0),
-            nalgebra_glm::vec2(-1.0, 0.0),
-            nalgebra_glm::vec2(-1.0, -1.0),
-            nalgebra_glm::vec2(0.0, 1.0),
-            nalgebra_glm::vec2(0.0, 0.0),
-            nalgebra_glm::vec2(0.0, -1.0),
-            nalgebra_glm::vec2(1.0, 1.0),
-            nalgebra_glm::vec2(1.0, 0.0),
-            nalgebra_glm::vec2(1.0, -1.0),
-        ];
-        for chunk_offset in chunk_offsets {
-            let chunk_pos = chunk_offset * (self.chunk_width as f32) + p;
-            let chunk = self.chunk_at_mut(chunk_pos);
-            chunk.generate(world, bvh, mesh_mgr, texture_mgr);
+        for y in -3..4 {
+            for x in -3..4 {
+                let chunk_offset = nalgebra_glm::vec2(x as f32, y as f32);
+                let chunk_pos = chunk_offset * (self.chunk_width as f32) + p;
+                let chunk = self.chunk_at_mut(chunk_pos);
+                chunk.generate(world, bvh, mesh_mgr, texture_mgr);
+            }
         }
     }
 

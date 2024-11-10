@@ -35,7 +35,7 @@ pub fn render_3d_models_system(
     );
 
     unsafe {
-        gl::Viewport(0, 0, int_screen_resolution.x, int_screen_resolution.x);
+        gl::Viewport(0, 0, int_screen_resolution.x, int_screen_resolution.y);
         gl::Enable(gl::CULL_FACE);
         gl::CullFace(gl::BACK);
         gl::Enable(gl::DEPTH_TEST);
@@ -59,6 +59,7 @@ pub fn render_3d_models_system(
     let camera_frustrum = &open_gl.camera.frustum();
     let mut rendered = 0;
 
+    let (view_matrix, proj_matrix) = open_gl.camera.view_proj_matrices();
     for model_id in bvh.iter_frustrum(camera_frustrum, debug) {
         rendered += 1;
         let mut model = world.get::<&mut ModelComponent>(model_id).unwrap();
@@ -87,7 +88,6 @@ pub fn render_3d_models_system(
             .depth_map
             .associate_uniform(open_gl.program(), 1, "shadow_map");
 
-        let (view_matrix, proj_matrix) = open_gl.camera.view_proj_matrices();
         mesh.draw(open_gl, model_matrix, view_matrix, proj_matrix);
     }
     // println!("{:?}", rendered);
@@ -109,6 +109,7 @@ pub fn render_3d_outlines_system(
     outline_program.set();
     let camera_frustrum = &open_gl.camera.frustum();
 
+    let (view_matrix, proj_matrix) = open_gl.camera.view_proj_matrices();
     for model_id in bvh.iter_frustrum(camera_frustrum, false) {
         let mut model = world.get::<&mut ModelComponent>(model_id).unwrap();
         if !model.outlined {
@@ -121,7 +122,6 @@ pub fn render_3d_outlines_system(
         let model_matrix = model.get_model_matrix();
         model.set_scale(old_scale);
 
-        let (view_matrix, proj_matrix) = open_gl.camera.view_proj_matrices();
         mesh.draw(open_gl, model_matrix, view_matrix, proj_matrix);
     }
 
