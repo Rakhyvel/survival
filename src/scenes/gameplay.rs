@@ -2,17 +2,19 @@ use core::f32;
 
 use hecs::{Entity, World};
 use rand::SeedableRng;
-use sdl2::keyboard::Scancode;
+use sdl2::{keyboard::Scancode, ttf::Font};
 
 use crate::{
     engine::{
         bvh::{BVHNodeId, BVH},
         camera::{Camera, ProjectionKind},
         chunked_map::ChunkedPerlinMap,
+        font::FontManager,
         objects::{create_program, Program, Texture},
         perlin::HeightMap,
         ray::Ray,
-        render2d::{self, Rectangle},
+        rectangle::Rectangle,
+        render2d::{self},
         render3d,
         render_core::{Mesh, MeshManager, ModelComponent, OpenGl, TextureManager},
         shadow_map::{self, DirectionalLightSource},
@@ -45,6 +47,7 @@ pub struct Gameplay {
     gui_open_gl: OpenGl,
     mesh_mgr: MeshManager,
     texture_mgr: TextureManager,
+    font_mgr: FontManager,
     map: ChunkedPerlinMap,
     bvh: BVH<Entity>,
     directional_light: DirectionalLightSource,
@@ -121,24 +124,16 @@ impl Scene for Gameplay {
             &self.bvh,
         );
 
-        for i in 0..80 {
-            render2d::render_rectangle(
-                Rectangle {
-                    pos: nalgebra_glm::vec2(
-                        i as f32 * 10.0 + 5.0,
-                        ((i as f32 + app.ticks as f32) * 0.1).cos() * 30.0 + 600.0,
-                    ),
-                    size: nalgebra_glm::vec2(10.0, 600.0),
-                    texture_id: self.texture_mgr.get_id_from_name("grass").unwrap(),
-                    uv: nalgebra_glm::vec2(6.0, 0.0),
-                    uv_size: nalgebra_glm::vec2(1.0, 1.0),
-                },
-                &mut self.gui_open_gl,
-                &self.mesh_mgr,
-                &self.texture_mgr,
-                app.window_size,
-            );
-        }
+        let font = self.font_mgr.get_font("font").unwrap();
+
+        font.draw(
+            nalgebra_glm::vec2(100.0, 100.0),
+            "Hello, World!",
+            &mut self.gui_open_gl,
+            &self.mesh_mgr,
+            &self.texture_mgr,
+            app.window_size,
+        );
     }
 }
 
@@ -162,10 +157,20 @@ impl Gameplay {
 
         // Setup the texture manager
         let mut texture_mgr = TextureManager::new();
-        let grass_texture = texture_mgr.add_texture(Texture::from_png("grass.png"), "grass");
-        let water_texture = texture_mgr.add_texture(Texture::from_png("water.png"), "water");
-        texture_mgr.add_texture(Texture::from_png("tree.png"), "tree");
-        texture_mgr.add_texture(Texture::from_png("rock.png"), "rock");
+        let grass_texture = texture_mgr.add_texture(Texture::from_png("grass.png"), Some("grass"));
+        let water_texture = texture_mgr.add_texture(Texture::from_png("water.png"), Some("water"));
+        texture_mgr.add_texture(Texture::from_png("tree.png"), Some("tree"));
+        texture_mgr.add_texture(Texture::from_png("rock.png"), Some("rock"));
+
+        // Setup the font manager
+        let mut font_mgr = FontManager::new();
+        font_mgr.add_font(
+            "res/Consolas.ttf",
+            "font",
+            16,
+            sdl2::ttf::FontStyle::NORMAL,
+            &mut texture_mgr,
+        );
 
         let mut bvh = BVH::<Entity>::new();
 
@@ -270,6 +275,7 @@ impl Gameplay {
             bvh,
             mesh_mgr,
             texture_mgr,
+            font_mgr,
             map,
             directional_light: DirectionalLightSource::new(
                 Camera::new(

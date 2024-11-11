@@ -13,7 +13,7 @@ use scenes::gameplay::Gameplay;
 //
 // ## Survival stats
 // - [ ] "feeling" bar that gives the most pressing matter
-//     - [ ] gui quads
+//     - [x] gui quads
 //     - [ ] font cacheing
 // - [ ] wild berries that appear on bushes
 //     - [ ] clicking and holding puts them into your hand

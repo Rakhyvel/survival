@@ -11,6 +11,8 @@ pub(crate) mod camera;
 #[allow(unused)]
 pub(crate) mod chunked_map;
 #[allow(unused)]
+pub(crate) mod font;
+#[allow(unused)]
 pub(crate) mod frustrum;
 #[allow(unused)]
 pub(crate) mod objects;
@@ -22,6 +24,8 @@ pub(crate) mod physics;
 pub(crate) mod plane;
 #[allow(unused)]
 pub(crate) mod ray;
+#[allow(unused)]
+pub(crate) mod rectangle;
 #[allow(unused)]
 pub(crate) mod render2d;
 #[allow(unused)]

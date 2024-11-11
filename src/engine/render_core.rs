@@ -22,8 +22,8 @@ pub struct ModelComponent {
 
 /// Contains a collection of meshes, and associates them with a MeshId.
 pub struct MeshManager {
-    meshes: Vec<Mesh>,
-    keys: HashMap<&'static str, MeshId>,
+    meshes: Vec<Mesh>,                   //< List of meshes
+    keys: HashMap<&'static str, MeshId>, //< Maps mesh names to ids in the mesh list
 }
 
 /// Opaque type used by a MeshManager to associate meshes.
@@ -39,8 +39,8 @@ pub struct Mesh {
 }
 
 pub struct TextureManager {
-    textures: Vec<Texture>,
-    keys: HashMap<&'static str, TextureId>,
+    textures: Vec<Texture>,                 //< List of textures
+    keys: HashMap<&'static str, TextureId>, //< Maps texture names to ids in the texture list
 }
 
 /// Opaque type used by a TextureManager to associate textures.
@@ -275,10 +275,12 @@ impl TextureManager {
         }
     }
 
-    pub fn add_texture(&mut self, texture: Texture, name: &'static str) -> TextureId {
+    pub fn add_texture(&mut self, texture: Texture, name: Option<&'static str>) -> TextureId {
         let id = TextureId::new(self.textures.len());
         self.textures.push(texture);
-        self.keys.insert(name, id);
+        if name.is_some() {
+            self.keys.insert(name.unwrap(), id);
+        }
         id
     }
 

@@ -2,11 +2,14 @@ use hecs::{Entity, World};
 
 use super::{
     bvh::BVH,
+    rectangle::Rectangle,
     render_core::{MeshManager, ModelComponent, OpenGl, TextureId, TextureManager},
 };
 
 pub fn render_rectangle(
-    rect: Rectangle,
+    dest: Rectangle,
+    texture_id: TextureId,
+    texture_dest: Rectangle,
     open_gl: &mut OpenGl,
     mesh_manager: &MeshManager,
     texture_manager: &TextureManager,
@@ -25,38 +28,36 @@ pub fn render_rectangle(
         &nalgebra_glm::translate(
             &nalgebra_glm::one(),
             &nalgebra_glm::vec3(
-                1.0 - 2.0 * rect.pos.x / int_screen_resolution.x as f32,
-                1.0 - 2.0 * rect.pos.y / int_screen_resolution.y as f32,
+                1.0 - 2.0 * dest.pos.x / int_screen_resolution.x as f32,
+                1.0 - 2.0 * dest.pos.y / int_screen_resolution.y as f32,
                 3.0,
             ),
         ),
         &nalgebra_glm::vec3(
-            rect.size.x / int_screen_resolution.x as f32,
-            rect.size.y / int_screen_resolution.y as f32,
+            dest.size.x / int_screen_resolution.x as f32,
+            dest.size.y / int_screen_resolution.y as f32,
             0.1,
         ),
     );
 
-    let texture = texture_manager
-        .get_texture_from_id(rect.texture_id)
-        .unwrap();
+    let texture = texture_manager.get_texture_from_id(texture_id).unwrap();
     let (texture_width, texture_height) = texture.get_dimensions().unwrap();
     texture.activate(gl::TEXTURE0);
     texture.associate_uniform(open_gl.program(), 0, "texture0");
-    let u_texture_top_left = open_gl.get_uniform("u_texture_top_left").unwrap();
+    let u_sprite_offset = open_gl.get_uniform("u_sprite_offset").unwrap();
     unsafe {
         gl::Uniform2f(
-            u_texture_top_left.id,
-            rect.uv.x / (texture_width as f32),
-            rect.uv.y / (texture_height as f32),
+            u_sprite_offset.id,
+            texture_dest.pos.x / texture_width as f32,
+            texture_dest.pos.y / texture_width as f32,
         );
     }
-    let u_texture_size = open_gl.get_uniform("u_texture_size").unwrap();
+    let u_sprite_size = open_gl.get_uniform("u_sprite_size").unwrap();
     unsafe {
         gl::Uniform2f(
-            u_texture_size.id,
-            rect.uv_size.x / (texture_width as f32),
-            rect.uv_size.y / (texture_height as f32),
+            u_sprite_size.id,
+            texture_dest.size.x / texture_width as f32,
+            texture_dest.size.y / texture_height as f32,
         );
     }
 
@@ -64,13 +65,4 @@ pub fn render_rectangle(
         .get_mesh_from_id(mesh_manager.get_id_from_name("quad-xy").unwrap())
         .unwrap();
     quad_mesh.draw(open_gl, model_matrix, view_matrix, proj_matrix);
-}
-
-pub struct Rectangle {
-    pub pos: nalgebra_glm::Vec2,
-    pub size: nalgebra_glm::Vec2,
-
-    pub texture_id: TextureId,
-    pub uv: nalgebra_glm::Vec2,
-    pub uv_size: nalgebra_glm::Vec2,
 }
