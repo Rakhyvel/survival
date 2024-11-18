@@ -101,7 +101,6 @@ impl RenderContext {
         // println!("{:?}", rendered);
     }
 
-    // TODO: Accept RenderContext
     pub fn render_3d_outlines_system(
         &self,
         world: &mut World,

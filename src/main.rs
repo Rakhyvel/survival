@@ -14,7 +14,9 @@ use scenes::gameplay::Gameplay;
 // ## Survival stats
 // - [ ] "feeling" bar that gives the most pressing matter
 //     - [x] gui quads
-//     - [ ] font cacheing
+//     - [x] font cacheing
+//     - [ ] hunger bar
+//         - [ ] 9-slices
 // - [ ] wild berries that appear on bushes
 //     - [ ] clicking and holding puts them into your hand
 //         > maybe when you hover over a bush, it highlights the bush with an action billboard that's like "(p) Pick berry", and pressing p picks the berry

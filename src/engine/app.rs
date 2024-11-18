@@ -72,7 +72,7 @@ pub fn run(
         gl::Enable(gl::MULTISAMPLE);
         gl::Enable(gl::BLEND);
         gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
-        gl::Enable(gl::FRAMEBUFFER_SRGB);
+        // gl::Enable(gl::FRAMEBUFFER_SRGB);
     }
 
     let mut app = App {

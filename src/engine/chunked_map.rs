@@ -56,7 +56,6 @@ impl Chunk {
         }
     }
 
-    // TODO: Accept RenderContext
     pub fn generate(&mut self, renderer: &RenderContext, world: &mut World, bvh: &mut BVH<Entity>) {
         if !self.generated {
             self.map.generate(
@@ -347,7 +346,6 @@ impl ChunkedPerlinMap {
         }
     }
 
-    // TODO: Accept RenderContext
     pub fn check_chunks(
         &mut self,
         renderer: &RenderContext,

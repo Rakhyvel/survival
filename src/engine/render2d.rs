@@ -8,7 +8,154 @@ use super::{
     render_core::{ModelComponent, RenderContext, TextureId},
 };
 
+pub struct NineSlice {
+    pub texture: TextureId,
+    pub border: f32,
+}
+
 impl RenderContext {
+    pub fn render_nine_slice(&self, nine_slice: NineSlice, dest: Rectangle) {
+        if dest.size.x < 2.0 * nine_slice.border || dest.size.y < 2.0 * nine_slice.border {
+            panic!("Too small! {}", nine_slice.border)
+        }
+
+        let (nine_slice_width, nine_slice_height) = self
+            .get_texture_from_id(nine_slice.texture)
+            .unwrap()
+            .get_dimensions()
+            .unwrap();
+
+        // Coordinates for the texture destination
+        let spritesheet_coords = [
+            // top-left corner
+            Rectangle::new(0.0, 0.0, nine_slice.border, nine_slice.border),
+            // top edge
+            Rectangle::new(
+                nine_slice.border,
+                0.0,
+                nine_slice_width as f32 - 2.0 * nine_slice.border,
+                nine_slice.border,
+            ),
+            // top-right corner
+            Rectangle::new(
+                nine_slice_width as f32 - nine_slice.border,
+                0.0,
+                nine_slice.border,
+                nine_slice.border,
+            ),
+            // left edge
+            Rectangle::new(
+                0.0,
+                nine_slice.border,
+                nine_slice.border,
+                nine_slice_height as f32 - 2.0 * nine_slice.border,
+            ),
+            // center
+            Rectangle::new(
+                nine_slice.border,
+                nine_slice.border,
+                nine_slice_width as f32 - 2.0 * nine_slice.border,
+                nine_slice_height as f32 - 2.0 * nine_slice.border,
+            ),
+            // right edge
+            Rectangle::new(
+                nine_slice_width as f32 - nine_slice.border,
+                nine_slice.border,
+                nine_slice.border,
+                nine_slice_height as f32 - 2.0 * nine_slice.border,
+            ),
+            // bottom-left corner
+            Rectangle::new(
+                0.0,
+                nine_slice_height as f32 - nine_slice.border,
+                nine_slice.border,
+                nine_slice.border,
+            ),
+            // bottom edge
+            Rectangle::new(
+                nine_slice.border,
+                nine_slice_height as f32 - nine_slice.border,
+                nine_slice_width as f32 - 2.0 * nine_slice.border,
+                nine_slice.border,
+            ),
+            // bottom-right corner
+            Rectangle::new(
+                nine_slice_width as f32 - nine_slice.border,
+                nine_slice_height as f32 - nine_slice.border,
+                nine_slice.border,
+                nine_slice.border,
+            ),
+        ];
+
+        let dest_coords = [
+            // top-left corner
+            Rectangle::new(dest.pos.x, dest.pos.y, nine_slice.border, nine_slice.border),
+            // top edge
+            Rectangle::new(
+                dest.pos.x + nine_slice.border,
+                dest.pos.y,
+                dest.size.x - 2.0 * nine_slice.border,
+                nine_slice.border,
+            ),
+            // top-right corner
+            Rectangle::new(
+                dest.pos.x + dest.size.x - nine_slice.border,
+                dest.pos.y,
+                nine_slice.border,
+                nine_slice.border,
+            ),
+            // left edge
+            Rectangle::new(
+                dest.pos.x,
+                dest.pos.y + nine_slice.border,
+                nine_slice.border,
+                dest.size.y - 2.0 * nine_slice.border,
+            ),
+            // center
+            Rectangle::new(
+                dest.pos.x + nine_slice.border,
+                dest.pos.y + nine_slice.border,
+                dest.size.x - 2.0 * nine_slice.border,
+                dest.size.y - 2.0 * nine_slice.border,
+            ),
+            // right edge
+            Rectangle::new(
+                dest.pos.x + dest.size.x - nine_slice.border,
+                dest.pos.y + nine_slice.border,
+                nine_slice.border,
+                dest.size.y - 2.0 * nine_slice.border,
+            ),
+            // bottom-left corner
+            Rectangle::new(
+                dest.pos.x,
+                dest.pos.y + dest.size.y - nine_slice.border,
+                nine_slice.border,
+                nine_slice.border,
+            ),
+            // bottom edge
+            Rectangle::new(
+                dest.pos.x + nine_slice.border,
+                dest.pos.y + dest.size.y - nine_slice.border,
+                dest.size.x - 2.0 * nine_slice.border,
+                nine_slice.border,
+            ),
+            // bottom-right corner
+            Rectangle::new(
+                dest.pos.x + dest.size.x - nine_slice.border,
+                dest.pos.y + dest.size.y - nine_slice.border,
+                nine_slice.border,
+                nine_slice.border,
+            ),
+        ];
+
+        for i in 0..9 {
+            let dest = dest_coords[i];
+            let texture_dest = spritesheet_coords[i];
+
+            self.render_rectangle(dest, nine_slice.texture, texture_dest);
+        }
+    }
+
     pub fn render_rectangle(
         &self,
         dest: Rectangle,
@@ -21,6 +168,8 @@ impl RenderContext {
             gl::Disable(gl::DEPTH_TEST); // Disable depth test for 2D rendering
             gl::Enable(gl::CULL_FACE);
             gl::CullFace(gl::BACK);
+            gl::Enable(gl::BLEND);
+            gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
         }
 
         let (view_matrix, proj_matrix) = self.camera.borrow().view_proj_matrices();
@@ -28,8 +177,8 @@ impl RenderContext {
             &nalgebra_glm::translate(
                 &nalgebra_glm::one(),
                 &nalgebra_glm::vec3(
-                    1.0 - 2.0 * dest.pos.x / res.x as f32,
-                    1.0 - 2.0 * dest.pos.y / res.y as f32,
+                    1.0 - 2.0 * dest.pos.x / res.x as f32 - dest.size.x / res.x as f32,
+                    1.0 - 2.0 * dest.pos.y / res.y as f32 - dest.size.y / res.y as f32,
                     3.0,
                 ),
             ),

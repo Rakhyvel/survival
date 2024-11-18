@@ -43,7 +43,6 @@ pub struct FontManager {
 }
 
 impl Font {
-    // TODO: Accept RenderContext
     pub fn new(font: &sdl2::ttf::Font, style: FontStyle, renderer: &RenderContext) -> Self {
         let height = font.height() as usize;
         let ascender = font.ascent() as usize;
@@ -62,7 +61,6 @@ impl Font {
         retval
     }
 
-    // TODO: Accept RenderContext
     pub fn draw(&self, pos: nalgebra_glm::Vec2, text: &str, renderer: &RenderContext) {
         let mut cursor = pos;
         for c in text.chars() {
@@ -89,7 +87,6 @@ impl Font {
         }
     }
 
-    // TODO: Accept RenderContext
     fn pack_gylphs(&mut self, font: &sdl2::ttf::Font, renderer: &RenderContext) {
         let mut x_offset: usize = 0;
         let mut y_offset: usize = 0;
@@ -152,7 +149,6 @@ impl FontManager {
         }
     }
 
-    // TODO: Accept RenderContext
     pub fn add_font(
         &mut self,
         path: &'static str,

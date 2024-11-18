@@ -13,6 +13,8 @@ use crate::{
         objects::{create_program, Texture},
         perlin::HeightMap,
         ray::Ray,
+        rectangle::Rectangle,
+        render2d::NineSlice,
         render_core::{ModelComponent, ProgramId},
         shadow_map::DirectionalLightSource,
     },
@@ -117,6 +119,32 @@ impl Scene for Gameplay {
             "Feeling: Fine",
             &app.renderer,
         );
+
+        let nine_slice = NineSlice {
+            texture: app
+                .renderer
+                .get_texture_id_from_name("nine-slice-test")
+                .unwrap(),
+            border: 8.0,
+        };
+        let nine_slice2 = NineSlice {
+            texture: app
+                .renderer
+                .get_texture_id_from_name("nine-slice-test2")
+                .unwrap(),
+            border: 8.0,
+        };
+        app.renderer
+            .render_nine_slice(nine_slice, Rectangle::new(100.0, 200.0, 164.0, 16.0));
+        app.renderer.render_nine_slice(
+            nine_slice2,
+            Rectangle::new(
+                100.0,
+                200.0,
+                (app.ticks as f32 * 0.01).cos().abs() * 100.0 + 16.0,
+                16.0,
+            ),
+        );
     }
 }
 
@@ -147,6 +175,14 @@ impl Gameplay {
             .add_texture(Texture::from_png("tree.png"), Some("tree"));
         app.renderer
             .add_texture(Texture::from_png("rock.png"), Some("rock"));
+        app.renderer.add_texture(
+            Texture::from_png("nine-slice-test.png"),
+            Some("nine-slice-test"),
+        );
+        app.renderer.add_texture(
+            Texture::from_png("nine-slice-test2.png"),
+            Some("nine-slice-test2"),
+        );
 
         // Setup the program manager
         let program_3d = app.renderer.add_program(
