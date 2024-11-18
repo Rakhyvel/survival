@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap, ops::Deref};
 
 use gl::types::GLuint;
 use obj::{load_obj, Obj, TexturedVertex};
@@ -7,7 +7,41 @@ use super::{
     aabb::AABB,
     camera::Camera,
     objects::{Buffer, Program, Texture, Uniform, Vao},
+    text,
 };
+
+#[derive(Default)]
+pub struct RenderContext {
+    pub(crate) camera: RefCell<Camera>,
+    pub(crate) program: RefCell<Option<ProgramId>>,
+    mesh_manager: RefCell<ResourceManager<Mesh, MeshId>>,
+    texture_manager: RefCell<ResourceManager<Texture, TextureId>>,
+    program_manager: RefCell<ResourceManager<Program, ProgramId>>,
+    // TODO: Move font manager in here, too
+    pub(crate) int_screen_resolution: nalgebra_glm::I32Vec2,
+}
+
+struct ResourceManager<Resource, Id: OpaqueId> {
+    resources: Vec<Resource>,
+    keys: HashMap<&'static str, Id>,
+}
+
+trait OpaqueId: Copy {
+    fn new(id: usize) -> Self;
+    fn as_usize(&self) -> usize;
+}
+
+/// Opaque type used by the mesh manager to associate meshes.
+#[derive(Copy, Clone)]
+pub struct MeshId(usize);
+
+/// Opaque type used by the texture manager to associate textures.
+#[derive(Copy, Clone)]
+pub struct TextureId(usize);
+
+/// Opaque type used by the program manager to associate programs.
+#[derive(Copy, Clone)]
+pub struct ProgramId(usize);
 
 /// An actual model, with geometry, a position, scale, rotation, and texture.
 pub struct ModelComponent {
@@ -20,41 +54,16 @@ pub struct ModelComponent {
     pub outlined: bool,
 }
 
-/// Contains a collection of meshes, and associates them with a MeshId.
-pub struct MeshManager {
-    meshes: Vec<Mesh>,                   //< List of meshes
-    keys: HashMap<&'static str, MeshId>, //< Maps mesh names to ids in the mesh list
-}
-
-/// Opaque type used by a MeshManager to associate meshes.
-#[derive(Copy, Clone)]
-pub struct MeshId(usize);
-
-/// Stores the geometry of a mesh. Meshes are registered in the MeshManager, and can be potentially shared across
+/// Stores the geometry of a mesh. Meshes are registered in the mesh manager, and can be potentially shared across
 /// multiple models.
-pub struct Mesh {
-    pub geometry: Vec<GeometryData>,
+pub(crate) struct Mesh {
+    geometry: Vec<GeometryData>,
     indices: Vec<u32>,
-    pub aabb: AABB,
-}
-
-pub struct TextureManager {
-    textures: Vec<Texture>,                 //< List of textures
-    keys: HashMap<&'static str, TextureId>, //< Maps texture names to ids in the texture list
-}
-
-/// Opaque type used by a TextureManager to associate textures.
-#[derive(Copy, Clone)]
-pub struct TextureId(usize);
-
-/// Encapsulates stuff needed for rendering using opengl, including the camera and the shader program.
-pub struct OpenGl {
-    pub camera: Camera,
-    program: Program,
+    aabb: AABB,
 }
 
 /// Actual geometry data for a mesh.
-pub struct GeometryData {
+struct GeometryData {
     ibo: Buffer<u32>,
     vbo: Buffer<f32>,
     vao: Vao,
@@ -68,42 +77,274 @@ enum GeometryDataIndex {
     Color = 3,
 }
 
-impl MeshManager {
+impl RenderContext {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn set_camera(&self, camera: Camera) {
+        *self.camera.borrow_mut() = camera
+    }
+
+    pub fn set_program(&self, name: Option<&'static str>) {
+        let manager = self.program_manager.borrow();
+        if name.is_some() {
+            let program_id = manager.get_id_from_name(name.unwrap()).unwrap();
+            *self.program.borrow_mut() = Some(program_id);
+            let program = manager.get_from_id(program_id).unwrap();
+            program.set();
+        } else {
+            *self.program.borrow_mut() = None;
+            unsafe {
+                gl::UseProgram(0);
+            }
+        }
+    }
+
+    pub fn set_program_from_id(&self, program_id: ProgramId) {
+        let manager = self.program_manager.borrow();
+        *self.program.borrow_mut() = Some(program_id);
+        let program = manager.get_from_id(program_id).unwrap();
+        program.set();
+    }
+
+    pub fn add_mesh(&self, mesh: Mesh, name: Option<&'static str>) -> MeshId {
+        self.mesh_manager.borrow_mut().add(mesh, name)
+    }
+
+    pub fn add_mesh_from_obj(&self, obj_file_data: &[u8], name: Option<&'static str>) -> MeshId {
+        self.add_mesh(Mesh::from_obj(obj_file_data), name)
+    }
+
+    pub fn add_mesh_from_verts(
+        &self,
+        indices: Vec<u32>,
+        datas: Vec<&Vec<f32>>,
+        name: Option<&'static str>,
+    ) -> MeshId {
+        self.add_mesh(Mesh::new(indices, datas), name)
+    }
+
+    pub fn add_texture(&self, texture: Texture, name: Option<&'static str>) -> TextureId {
+        self.texture_manager.borrow_mut().add(texture, name)
+    }
+
+    pub fn add_program(&self, program: Program, name: Option<&'static str>) -> ProgramId {
+        self.program_manager.borrow_mut().add(program, name)
+    }
+
+    pub fn get_mesh(&self, name: &'static str) -> Option<std::cell::Ref<'_, Mesh>> {
+        if let Some(id) = self.get_mesh_id_from_name(name) {
+            self.get_mesh_from_id(id)
+        } else {
+            None
+        }
+    }
+
+    pub fn get_texture(&self, name: &'static str) -> Option<std::cell::Ref<'_, Texture>> {
+        if let Some(id) = self.get_texture_id_from_name(name) {
+            self.get_texture_from_id(id)
+        } else {
+            None
+        }
+    }
+
+    pub fn get_program(&self, name: &'static str) -> Option<std::cell::Ref<'_, Program>> {
+        if let Some(id) = self.get_program_id_from_name(name) {
+            self.get_program_from_id(id)
+        } else {
+            None
+        }
+    }
+
+    pub fn get_mesh_from_id(&self, id: MeshId) -> Option<std::cell::Ref<'_, Mesh>> {
+        let manager = self.mesh_manager.borrow();
+        if let Some(mesh) = manager.get_from_id(id) {
+            // Map the Ref<MeshManager> to Ref<Mesh>
+            Some(std::cell::Ref::map(manager, |m| m.get_from_id(id).unwrap()))
+        } else {
+            None
+        }
+    }
+
+    pub fn get_texture_from_id(&self, id: TextureId) -> Option<std::cell::Ref<'_, Texture>> {
+        let manager = self.texture_manager.borrow();
+        if let Some(texture) = manager.get_from_id(id) {
+            // Map the Ref<TextureManager> to Ref<Texture>
+            Some(std::cell::Ref::map(manager, |m| m.get_from_id(id).unwrap()))
+        } else {
+            None
+        }
+    }
+
+    pub fn get_program_from_id(&self, id: ProgramId) -> Option<std::cell::Ref<'_, Program>> {
+        let manager = self.program_manager.borrow();
+        if let Some(program) = manager.get_from_id(id) {
+            // Map the Ref<ProgramManager> to Ref<Program>
+            Some(std::cell::Ref::map(manager, |m| m.get_from_id(id).unwrap()))
+        } else {
+            None
+        }
+    }
+
+    pub fn get_mesh_id_from_name(&self, name: &'static str) -> Option<MeshId> {
+        self.mesh_manager.borrow().get_id_from_name(name)
+    }
+
+    pub fn get_texture_id_from_name(&self, name: &'static str) -> Option<TextureId> {
+        self.texture_manager.borrow().get_id_from_name(name)
+    }
+
+    pub fn get_program_id_from_name(&self, name: &'static str) -> Option<ProgramId> {
+        self.program_manager.borrow().get_id_from_name(name)
+    }
+
+    pub fn get_mesh_aabb(&self, mesh_id: MeshId) -> AABB {
+        self.mesh_manager
+            .borrow()
+            .get_from_id(mesh_id)
+            .unwrap()
+            .aabb
+    }
+
+    pub fn get_model_aabb(&self, model: &ModelComponent) -> AABB {
+        self.mesh_manager
+            .borrow()
+            .get_from_id(model.mesh_id)
+            .unwrap()
+            .aabb
+            .scale(model.scale)
+            .translate(model.position)
+    }
+
+    pub fn get_current_program_id(&self) -> u32 {
+        if self.program.borrow().is_some() {
+            let program = self
+                .get_program_from_id(self.program.borrow().unwrap())
+                .unwrap();
+            program.id()
+        } else {
+            0
+        }
+    }
+
+    pub fn get_program_uniform(&self, uniform_name: &str) -> Result<Uniform, &'static str> {
+        Uniform::new(self.get_current_program_id(), uniform_name)
+    }
+
+    pub fn draw(
+        &self,
+        mesh: &Mesh,
+        model_matrix: nalgebra_glm::Mat4,
+        view_matrix: nalgebra_glm::Mat4,
+        proj_matrix: nalgebra_glm::Mat4,
+    ) {
+        let u_model_matrix: Uniform = self.get_program_uniform("u_model_matrix").unwrap();
+        let u_view_matrix = self.get_program_uniform("u_view_matrix").unwrap();
+        let u_proj_matrix = self.get_program_uniform("u_proj_matrix").unwrap();
+        unsafe {
+            gl::UniformMatrix4fv(
+                u_model_matrix.id,
+                1,
+                gl::FALSE,
+                &model_matrix.columns(0, 4)[0],
+            );
+            gl::UniformMatrix4fv(
+                u_view_matrix.id,
+                1,
+                gl::FALSE,
+                &view_matrix.columns(0, 4)[0],
+            );
+            gl::UniformMatrix4fv(
+                u_proj_matrix.id,
+                1,
+                gl::FALSE,
+                &proj_matrix.columns(0, 4)[0],
+            );
+
+            // Setup geometry for rendering
+            for i in 0..mesh.geometry.len() {
+                mesh.geometry[i].vbo.bind();
+                mesh.geometry[i].ibo.bind();
+                mesh.geometry[i].vao.enable(i as u32);
+            }
+
+            // Make the render call!
+            gl::DrawElements(
+                gl::TRIANGLES,
+                mesh.indices.len() as i32,
+                gl::UNSIGNED_INT,
+                0 as *const _,
+            );
+        }
+    }
+}
+
+impl<Resource, Id: OpaqueId> ResourceManager<Resource, Id> {
     pub fn new() -> Self {
         Self {
-            meshes: vec![],
+            resources: vec![],
             keys: HashMap::new(),
         }
     }
 
-    pub fn add_mesh(&mut self, mesh: Mesh, name: Option<&'static str>) -> MeshId {
-        let id = MeshId::new(self.meshes.len());
-        self.meshes.push(mesh);
+    pub fn add(&mut self, res: Resource, name: Option<&'static str>) -> Id {
+        let id = Id::new(self.resources.len());
+        self.resources.push(res);
         if name.is_some() {
             self.keys.insert(name.unwrap(), id);
         }
         id
     }
 
-    pub fn get_mesh_from_id(&self, id: MeshId) -> Option<&Mesh> {
-        self.meshes.get(id.as_usize())
+    pub fn get_from_id(&self, id: Id) -> Option<&Resource> {
+        self.resources.get(id.as_usize())
     }
 
-    pub fn get_id_from_name(&self, name: &'static str) -> Option<MeshId> {
+    pub fn get_id_from_name(&self, name: &'static str) -> Option<Id> {
         self.keys.get(name).copied()
     }
 
-    pub fn get_mesh(&self, name: &'static str) -> Option<&Mesh> {
-        self.get_mesh_from_id(self.get_id_from_name(name).unwrap())
+    pub fn get(&self, name: &'static str) -> Option<&Resource> {
+        self.get_from_id(self.get_id_from_name(name).unwrap())
     }
 }
 
-impl MeshId {
-    pub fn new(id: usize) -> Self {
+impl<Resource, Id: OpaqueId> Default for ResourceManager<Resource, Id> {
+    fn default() -> Self {
+        Self {
+            resources: vec![],
+            keys: HashMap::new(),
+        }
+    }
+}
+
+impl OpaqueId for MeshId {
+    fn new(id: usize) -> Self {
         MeshId(id)
     }
 
-    pub fn as_usize(&self) -> usize {
+    fn as_usize(&self) -> usize {
+        self.0
+    }
+}
+
+impl OpaqueId for TextureId {
+    fn new(id: usize) -> Self {
+        TextureId(id)
+    }
+
+    fn as_usize(&self) -> usize {
+        self.0
+    }
+}
+
+impl OpaqueId for ProgramId {
+    fn new(id: usize) -> Self {
+        ProgramId(id)
+    }
+
+    fn as_usize(&self) -> usize {
         self.0
     }
 }
@@ -146,15 +387,6 @@ impl ModelComponent {
 
     pub fn get_model_matrix(&self) -> nalgebra_glm::Mat4 {
         self.model_matrix
-    }
-
-    pub fn get_aabb(&self, mesh_manager: &MeshManager) -> AABB {
-        mesh_manager
-            .get_mesh_from_id(self.mesh_id)
-            .unwrap()
-            .aabb
-            .scale(self.scale)
-            .translate(self.position)
     }
 
     fn regen_model_matrix(&mut self) {
@@ -217,121 +449,6 @@ impl Mesh {
         let data = vec![&vertices, &normals, &uv];
 
         Self::new(indices, data)
-    }
-
-    pub fn draw(
-        &self,
-        open_gl: &OpenGl,
-        model_matrix: nalgebra_glm::Mat4,
-        view_matrix: nalgebra_glm::Mat4,
-        proj_matrix: nalgebra_glm::Mat4,
-    ) {
-        let u_model_matrix = open_gl.get_uniform("u_model_matrix").unwrap();
-        let u_view_matrix = open_gl.get_uniform("u_view_matrix").unwrap();
-        let u_proj_matrix = open_gl.get_uniform("u_proj_matrix").unwrap();
-        unsafe {
-            gl::UniformMatrix4fv(
-                u_model_matrix.id,
-                1,
-                gl::FALSE,
-                &model_matrix.columns(0, 4)[0],
-            );
-            gl::UniformMatrix4fv(
-                u_view_matrix.id,
-                1,
-                gl::FALSE,
-                &view_matrix.columns(0, 4)[0],
-            );
-            gl::UniformMatrix4fv(
-                u_proj_matrix.id,
-                1,
-                gl::FALSE,
-                &proj_matrix.columns(0, 4)[0],
-            );
-
-            // Setup geometry for rendering
-            for i in 0..self.geometry.len() {
-                self.geometry[i].vbo.bind();
-                self.geometry[i].ibo.bind();
-                self.geometry[i].vao.enable(i as u32);
-            }
-
-            // Make the render call!
-            gl::DrawElements(
-                gl::TRIANGLES,
-                self.indices.len() as i32,
-                gl::UNSIGNED_INT,
-                0 as *const _,
-            );
-        }
-    }
-}
-
-impl TextureManager {
-    pub fn new() -> Self {
-        Self {
-            textures: vec![],
-            keys: HashMap::new(),
-        }
-    }
-
-    pub fn add_texture(&mut self, texture: Texture, name: Option<&'static str>) -> TextureId {
-        let id = TextureId::new(self.textures.len());
-        self.textures.push(texture);
-        if name.is_some() {
-            self.keys.insert(name.unwrap(), id);
-        }
-        id
-    }
-
-    pub fn get_texture_from_id(&self, id: TextureId) -> Option<&Texture> {
-        self.textures.get(id.as_usize())
-    }
-
-    pub fn get_id_from_name(&self, name: &'static str) -> Option<TextureId> {
-        self.keys.get(name).copied()
-    }
-
-    pub fn get_texture(&self, name: &'static str) -> Option<&Texture> {
-        self.get_texture_from_id(self.get_id_from_name(name).unwrap())
-    }
-}
-
-impl TextureId {
-    pub fn new(id: usize) -> Self {
-        TextureId(id)
-    }
-
-    pub fn as_usize(&self) -> usize {
-        self.0
-    }
-}
-
-impl OpenGl {
-    pub fn new(camera: Camera, program: Program) -> Self {
-        Self { camera, program }
-    }
-
-    pub fn set_shader_uniforms(&self, sun_dir: nalgebra_glm::Vec3, resolution: nalgebra_glm::Vec2) {
-        self.program.set();
-        // let u_resolution = self.get_uniform("u_resolution").unwrap();
-        let u_sun_dir = self.get_uniform("u_sun_dir").unwrap();
-        unsafe {
-            // gl::Uniform2f(u_resolution.id, resolution.x, resolution.y);
-            gl::Uniform3f(u_sun_dir.id, sun_dir.x, sun_dir.y, sun_dir.z);
-        }
-    }
-
-    pub fn get_uniform(&self, uniform_name: &str) -> Result<Uniform, &'static str> {
-        Uniform::new(self.program.id(), uniform_name)
-    }
-
-    pub fn program(&self) -> GLuint {
-        self.program.id()
-    }
-
-    pub fn set_program(&self) {
-        self.program.set();
     }
 }
 

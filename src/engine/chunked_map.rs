@@ -6,7 +6,7 @@ use crate::scenes::gameplay::Rock;
 use super::{
     bvh::BVH,
     perlin::{HeightMap, PerlinMap},
-    render_core::{Mesh, MeshManager, ModelComponent, TextureManager},
+    render_core::{ModelComponent, RenderContext},
     sphere::Sphere,
 };
 
@@ -56,13 +56,8 @@ impl Chunk {
         }
     }
 
-    pub fn generate(
-        &mut self,
-        world: &mut World,
-        bvh: &mut BVH<Entity>,
-        mesh_mgr: &mut MeshManager,
-        texture_mgr: &TextureManager,
-    ) {
+    // TODO: Accept RenderContext
+    pub fn generate(&mut self, renderer: &RenderContext, world: &mut World, bvh: &mut BVH<Entity>) {
         if !self.generated {
             self.map.generate(
                 self.level_of_detail,
@@ -80,16 +75,16 @@ impl Chunk {
             let mut rng = rand::rngs::StdRng::from_entropy();
             // self.map.erode(64, rand::Rng::gen(&mut rng));
 
-            let grass_texture = texture_mgr.get_id_from_name("grass").unwrap();
-            let tree_texture = texture_mgr.get_id_from_name("tree").unwrap();
-            let rock_texture = texture_mgr.get_id_from_name("rock").unwrap();
-            let tree_mesh = mesh_mgr.get_id_from_name("tree").unwrap();
-            let bush_mesh = mesh_mgr.get_id_from_name("bush").unwrap();
-            let cube_mesh = mesh_mgr.get_id_from_name("cube").unwrap();
+            let grass_texture = renderer.get_texture_id_from_name("grass").unwrap();
+            let tree_texture = renderer.get_texture_id_from_name("tree").unwrap();
+            let rock_texture = renderer.get_texture_id_from_name("rock").unwrap();
+            let tree_mesh = renderer.get_mesh_id_from_name("tree").unwrap();
+            let bush_mesh = renderer.get_mesh_id_from_name("bush").unwrap();
+            let cube_mesh = renderer.get_mesh_id_from_name("cube").unwrap();
 
             let pos_with_z = nalgebra_glm::vec3(self.pos.x, self.pos.y, 0.0);
             let (i, v, n, u) = self.create_mesh();
-            let grass_mesh = mesh_mgr.add_mesh(Mesh::new(i, vec![&v, &n, &u]), None);
+            let grass_mesh = renderer.add_mesh_from_verts(i, vec![&v, &n, &u], None);
             let chunk_entity = world.spawn((ModelComponent::new(
                 grass_mesh,
                 grass_texture,
@@ -98,11 +93,7 @@ impl Chunk {
             ),));
             bvh.insert(
                 chunk_entity,
-                mesh_mgr
-                    .get_mesh_from_id(grass_mesh)
-                    .unwrap()
-                    .aabb
-                    .translate(pos_with_z),
+                renderer.get_mesh_aabb(grass_mesh).translate(pos_with_z),
             );
 
             // TODO: This should be OUT!
@@ -128,10 +119,8 @@ impl Chunk {
                 ));
                 bvh.insert(
                     rock_entity,
-                    mesh_mgr
-                        .get_mesh_from_id(cube_mesh)
-                        .unwrap()
-                        .aabb
+                    renderer
+                        .get_mesh_aabb(cube_mesh)
                         .scale(scale_vec * 0.5)
                         .translate(position),
                 );
@@ -164,10 +153,8 @@ impl Chunk {
                     ));
                     bvh.insert(
                         tree_entity,
-                        mesh_mgr
-                            .get_mesh_from_id(cube_mesh)
-                            .unwrap()
-                            .aabb
+                        renderer
+                            .get_mesh_aabb(cube_mesh)
                             .scale(scale_vec)
                             .translate(position),
                     );
@@ -202,10 +189,8 @@ impl Chunk {
                     ),));
                     bvh.insert(
                         tree_entity,
-                        mesh_mgr
-                            .get_mesh_from_id(bush_mesh)
-                            .unwrap()
-                            .aabb
+                        renderer
+                            .get_mesh_aabb(bush_mesh)
                             .scale(scale_vec)
                             .translate(position),
                     );
@@ -362,20 +347,20 @@ impl ChunkedPerlinMap {
         }
     }
 
+    // TODO: Accept RenderContext
     pub fn check_chunks(
         &mut self,
+        renderer: &RenderContext,
         p: nalgebra_glm::Vec2,
         world: &mut World,
         bvh: &mut BVH<Entity>,
-        mesh_mgr: &mut MeshManager,
-        texture_mgr: &TextureManager,
     ) {
         for y in -3..4 {
             for x in -3..4 {
                 let chunk_offset = nalgebra_glm::vec2(x as f32, y as f32);
                 let chunk_pos = chunk_offset * (self.chunk_width as f32) + p;
                 let chunk = self.chunk_at_mut(chunk_pos);
-                chunk.generate(world, bvh, mesh_mgr, texture_mgr);
+                chunk.generate(renderer, world, bvh);
             }
         }
     }

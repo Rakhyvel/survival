@@ -1,6 +1,7 @@
 use sdl2::{
     pixels::Color,
     rect::Rect,
+    render::RendererContext,
     surface::Surface,
     sys::SDL_Rect,
     ttf::{FontStyle, Sdl2TtfContext},
@@ -11,7 +12,7 @@ use super::{
     objects::Texture,
     rectangle::Rectangle,
     render2d,
-    render_core::{MeshManager, OpenGl, TextureId, TextureManager},
+    render_core::{RenderContext, TextureId},
 };
 
 #[derive(Copy, Clone, Default)]
@@ -42,11 +43,8 @@ pub struct FontManager {
 }
 
 impl Font {
-    pub fn new(
-        font: &sdl2::ttf::Font,
-        style: FontStyle,
-        texture_manager: &mut TextureManager,
-    ) -> Self {
+    // TODO: Accept RenderContext
+    pub fn new(font: &sdl2::ttf::Font, style: FontStyle, renderer: &RenderContext) -> Self {
         let height = font.height() as usize;
         let ascender = font.ascent() as usize;
         let descender = font.descent() as usize;
@@ -60,19 +58,12 @@ impl Font {
             line_skip,
             style,
         };
-        retval.pack_gylphs(font, texture_manager);
+        retval.pack_gylphs(font, renderer);
         retval
     }
 
-    pub fn draw(
-        &self,
-        pos: nalgebra_glm::Vec2,
-        text: &str,
-        open_gl: &mut OpenGl,
-        mesh_manager: &MeshManager,
-        texture_manager: &TextureManager,
-        int_screen_resolution: nalgebra_glm::I32Vec2,
-    ) {
+    // TODO: Accept RenderContext
+    pub fn draw(&self, pos: nalgebra_glm::Vec2, text: &str, renderer: &RenderContext) {
         let mut cursor = pos;
         for c in text.chars() {
             let c_byte: u8 = c as u8;
@@ -92,20 +83,14 @@ impl Font {
                 size: glyph.rect.size,
             };
             // TODO: Color mod in the 2D shader
-            render2d::render_rectangle(
-                dest_rect,
-                self.cache_texture.unwrap(),
-                glyph.rect,
-                open_gl,
-                mesh_manager,
-                texture_manager,
-                int_screen_resolution,
-            );
+            // TODO: Make part of renderer
+            renderer.render_rectangle(dest_rect, self.cache_texture.unwrap(), glyph.rect);
             cursor.x += glyph.advance as f32;
         }
     }
 
-    fn pack_gylphs(&mut self, font: &sdl2::ttf::Font, texture_manager: &mut TextureManager) {
+    // TODO: Accept RenderContext
+    fn pack_gylphs(&mut self, font: &sdl2::ttf::Font, renderer: &RenderContext) {
         let mut x_offset: usize = 0;
         let mut y_offset: usize = 0;
         let mut mega_surface = Surface::new(
@@ -145,7 +130,7 @@ impl Font {
         }
 
         let font_texture = Texture::from_surface(mega_surface);
-        self.cache_texture = Some(texture_manager.add_texture(font_texture, None));
+        self.cache_texture = Some(renderer.add_texture(font_texture, None));
     }
 
     fn set_glyph(&mut self, char: usize, glyph: Glyph) {
@@ -167,13 +152,14 @@ impl FontManager {
         }
     }
 
+    // TODO: Accept RenderContext
     pub fn add_font(
         &mut self,
         path: &'static str,
         name: &'static str,
         size: u16,
         style: sdl2::ttf::FontStyle,
-        texture_manager: &mut TextureManager,
+        renderer: &RenderContext,
     ) -> FontId {
         let id = FontId::new(self.fonts.len());
 
@@ -181,7 +167,7 @@ impl FontManager {
         let ttf_font = self.ttf_context.load_font(Path::new(path), size).unwrap();
 
         // Create a new Font instance with a reference to ttf_font
-        let font = Font::new(&ttf_font, style, texture_manager);
+        let font = Font::new(&ttf_font, style, renderer);
 
         self.fonts.push(font);
         self.keys.insert(name, id);

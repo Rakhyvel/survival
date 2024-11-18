@@ -31,6 +31,6 @@ fn main() -> Result<(), String> {
     run(
         nalgebra_glm::I32Vec2::new(800, 600),
         "Survival Prototype",
-        &|_app| RefCell::new(Box::new(Gameplay::new())),
+        &|app| RefCell::new(Box::new(Gameplay::new(app))),
     )
 }

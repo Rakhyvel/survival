@@ -2,7 +2,7 @@ use core::f32;
 
 use hecs::{Entity, World};
 use rand::SeedableRng;
-use sdl2::{keyboard::Scancode, ttf::Font};
+use sdl2::keyboard::Scancode;
 
 use crate::{
     engine::{
@@ -10,14 +10,11 @@ use crate::{
         camera::{Camera, ProjectionKind},
         chunked_map::ChunkedPerlinMap,
         font::FontManager,
-        objects::{create_program, Program, Texture},
+        objects::{create_program, Texture},
         perlin::HeightMap,
         ray::Ray,
-        rectangle::Rectangle,
-        render2d::{self},
-        render3d,
-        render_core::{Mesh, MeshManager, ModelComponent, OpenGl, TextureManager},
-        shadow_map::{self, DirectionalLightSource},
+        render_core::{ModelComponent, ProgramId},
+        shadow_map::DirectionalLightSource,
     },
     App, Scene,
 };
@@ -42,16 +39,15 @@ pub struct Rock {}
 
 pub struct Gameplay {
     world: World,
-    gui_world: World,
-    open_gl: OpenGl,
-    gui_open_gl: OpenGl,
-    mesh_mgr: MeshManager,
-    texture_mgr: TextureManager,
+    camera_3d: Camera,
+    camera_2d: Camera,
+    program_3d: ProgramId,
+    program_2d: ProgramId,
+    outline_program: ProgramId,
+    directional_light: DirectionalLightSource,
     font_mgr: FontManager,
     map: ChunkedPerlinMap,
     bvh: BVH<Entity>,
-    directional_light: DirectionalLightSource,
-    outline_program: Program,
 
     // Player stuff
     position: nalgebra_glm::Vec3,
@@ -70,11 +66,10 @@ impl Scene for Gameplay {
         self.directional_light.light_dir.y =
             (app.ticks as f32 / (60.0 * 60.0 * 0.5 * MINUTES_PER_DAY) + TICKS_OFFSET).sin();
         self.map.check_chunks(
+            &app.renderer,
             self.position.xy(),
             &mut self.world,
             &mut self.bvh,
-            &mut self.mesh_mgr,
-            &self.texture_mgr,
         );
         self.update_view(app);
         self.update_clickers(app);
@@ -98,69 +93,94 @@ impl Scene for Gameplay {
             gl::ClearColor(result.x / 255., result.y / 255., result.z / 255., 1.0);
         }
 
-        shadow_map::directional_light_system(
+        app.renderer.set_camera(self.camera_3d);
+        app.renderer.directional_light_system(
             &mut self.directional_light,
             &mut self.world,
-            &mut self.open_gl,
-            &self.mesh_mgr,
-            &self.texture_mgr,
             &self.bvh,
         );
-        render3d::render_3d_models_system(
+        app.renderer.set_program_from_id(self.program_3d);
+        app.renderer.render_3d_models_system(
             &mut self.world,
-            &mut self.open_gl,
             &self.directional_light,
-            &self.mesh_mgr,
-            &self.texture_mgr,
             &self.bvh,
-            app.window_size,
             self.debug,
         );
-        render3d::render_3d_outlines_system(
-            &mut self.world,
-            &mut self.open_gl,
-            &self.outline_program,
-            &self.mesh_mgr,
-            &self.bvh,
-        );
+        app.renderer
+            .render_3d_outlines_system(&mut self.world, self.outline_program, &self.bvh);
 
+        app.renderer.set_program_from_id(self.program_2d);
+        app.renderer.set_camera(self.camera_2d);
         let font = self.font_mgr.get_font("font").unwrap();
-
         font.draw(
             nalgebra_glm::vec2(100.0, 100.0),
-            "Hello, World!",
-            &mut self.gui_open_gl,
-            &self.mesh_mgr,
-            &self.texture_mgr,
-            app.window_size,
+            "Feeling: Fine",
+            &app.renderer,
         );
     }
 }
 
 impl Gameplay {
-    pub fn new() -> Self {
+    pub fn new(app: &App) -> Self {
         let mut world = World::new();
-
-        let gui_world = World::new();
 
         let mut rng = rand::rngs::StdRng::from_entropy();
         let mut map =
             ChunkedPerlinMap::new(MAP_WIDTH, CHUNK_SIZE, 0.01, rand::Rng::gen(&mut rng), 1.0);
 
         // Setup the mesh manager
-        let mut mesh_mgr = MeshManager::new();
-        let quad_mesh = mesh_mgr.add_mesh(Mesh::from_obj(QUAD_DATA), Some("quad"));
-        mesh_mgr.add_mesh(Mesh::from_obj(QUAD_XY_DATA), Some("quad-xy"));
-        let cube_mesh = mesh_mgr.add_mesh(Mesh::from_obj(CUBE_DATA), Some("cube"));
-        mesh_mgr.add_mesh(Mesh::from_obj(CONE_DATA), Some("tree"));
-        mesh_mgr.add_mesh(Mesh::from_obj(BUSH_DATA), Some("bush"));
+        let quad_mesh = app.renderer.add_mesh_from_obj(QUAD_DATA, Some("quad"));
+        app.renderer
+            .add_mesh_from_obj(QUAD_XY_DATA, Some("quad-xy"));
+        let cube_mesh = app.renderer.add_mesh_from_obj(CUBE_DATA, Some("cube"));
+        app.renderer.add_mesh_from_obj(CONE_DATA, Some("tree"));
+        app.renderer.add_mesh_from_obj(BUSH_DATA, Some("bush"));
 
         // Setup the texture manager
-        let mut texture_mgr = TextureManager::new();
-        let grass_texture = texture_mgr.add_texture(Texture::from_png("grass.png"), Some("grass"));
-        let water_texture = texture_mgr.add_texture(Texture::from_png("water.png"), Some("water"));
-        texture_mgr.add_texture(Texture::from_png("tree.png"), Some("tree"));
-        texture_mgr.add_texture(Texture::from_png("rock.png"), Some("rock"));
+        let grass_texture = app
+            .renderer
+            .add_texture(Texture::from_png("grass.png"), Some("grass"));
+        let water_texture = app
+            .renderer
+            .add_texture(Texture::from_png("water.png"), Some("water"));
+        app.renderer
+            .add_texture(Texture::from_png("tree.png"), Some("tree"));
+        app.renderer
+            .add_texture(Texture::from_png("rock.png"), Some("rock"));
+
+        // Setup the program manager
+        let program_3d = app.renderer.add_program(
+            create_program(
+                include_str!("../shaders/3d.vert"),
+                include_str!("../shaders/3d.frag"),
+            )
+            .unwrap(),
+            Some("3d"),
+        );
+        let program_2d = app.renderer.add_program(
+            create_program(
+                include_str!("../shaders/2d.vert"),
+                include_str!("../shaders/2d.frag"),
+            )
+            .unwrap(),
+            Some("2d"),
+        );
+        let shadow_program = app.renderer.add_program(
+            create_program(
+                include_str!("../shaders/shadow.vert"),
+                include_str!("../shaders/shadow.frag"),
+            )
+            .unwrap(),
+            Some("shadow"),
+        );
+        let outline_program = app.renderer.add_program(
+            create_program(
+                include_str!("../shaders/3d.vert"),
+                include_str!("../shaders/3d-color.frag"),
+            )
+            .unwrap(),
+            Some("outline"),
+        );
 
         // Setup the font manager
         let mut font_mgr = FontManager::new();
@@ -169,7 +189,7 @@ impl Gameplay {
             "font",
             16,
             sdl2::ttf::FontStyle::NORMAL,
-            &mut texture_mgr,
+            &app.renderer,
         );
 
         let mut bvh = BVH::<Entity>::new();
@@ -193,21 +213,10 @@ impl Gameplay {
         ),));
         let player_node_id = bvh.insert(
             player_entity,
-            mesh_mgr
-                .get_mesh("cube")
-                .unwrap()
-                .aabb
+            app.renderer
+                .get_mesh_aabb(cube_mesh)
                 .scale(scale_vec)
                 .translate(spawn_point),
-        );
-        println!(
-            "{:?}",
-            mesh_mgr
-                .get_mesh("cube")
-                .unwrap()
-                .aabb
-                .scale(scale_vec)
-                .translate(spawn_point)
         );
         world
             .insert(
@@ -228,53 +237,36 @@ impl Gameplay {
         ),));
         bvh.insert(
             water_entity,
-            mesh_mgr
-                .get_mesh("quad")
-                .unwrap()
-                .aabb
+            app.renderer
+                .get_mesh_aabb(quad_mesh)
                 .scale(scale_vec)
                 .translate(nalgebra_glm::vec3(0.0, 0.0, 0.5)),
         );
 
         Self {
             world,
-            gui_world,
-            open_gl: OpenGl::new(
-                Camera::new(
-                    spawn_point,
-                    nalgebra_glm::vec3(MAP_WIDTH as f32 / 2.0, MAP_WIDTH as f32 / 2.0, 0.5),
-                    nalgebra_glm::vec3(0.0, 0.0, 1.0),
-                    ProjectionKind::Perspective { fov: 0.65 },
-                ),
-                create_program(
-                    include_str!("../shaders/3d.vert"),
-                    include_str!("../shaders/3d.frag"),
-                )
-                .unwrap(),
+            camera_3d: Camera::new(
+                spawn_point,
+                nalgebra_glm::vec3(MAP_WIDTH as f32 / 2.0, MAP_WIDTH as f32 / 2.0, 0.5),
+                nalgebra_glm::vec3(0.0, 0.0, 1.0),
+                ProjectionKind::Perspective { fov: 0.65 },
             ),
-            gui_open_gl: OpenGl::new(
-                Camera::new(
-                    nalgebra_glm::vec3(0.0, 0.0, 0.0),
-                    nalgebra_glm::vec3(0.0, 0.0, 1.0),
-                    nalgebra_glm::vec3(0.0, 1.0, 0.0),
-                    ProjectionKind::Orthographic {
-                        left: -1.0,
-                        right: 1.0,
-                        bottom: -1.0,
-                        top: 1.0,
-                        near: 0.1,
-                        far: 10.0,
-                    },
-                ),
-                create_program(
-                    include_str!("../shaders/2d.vert"),
-                    include_str!("../shaders/2d.frag"),
-                )
-                .unwrap(),
+            program_3d,
+            camera_2d: Camera::new(
+                nalgebra_glm::vec3(0.0, 0.0, 0.0),
+                nalgebra_glm::vec3(0.0, 0.0, 1.0),
+                nalgebra_glm::vec3(0.0, 1.0, 0.0),
+                ProjectionKind::Orthographic {
+                    left: -1.0,
+                    right: 1.0,
+                    bottom: -1.0,
+                    top: 1.0,
+                    near: 0.1,
+                    far: 10.0,
+                },
             ),
+            program_2d,
             bvh,
-            mesh_mgr,
-            texture_mgr,
             font_mgr,
             map,
             directional_light: DirectionalLightSource::new(
@@ -292,19 +284,11 @@ impl Gameplay {
                         far: 0.0,
                     },
                 ),
-                create_program(
-                    include_str!("../shaders/shadow.vert"),
-                    include_str!("../shaders/shadow.frag"),
-                )
-                .unwrap(),
+                shadow_program,
                 nalgebra_glm::vec3(-0.1, 0.0, 0.86),
                 MAP_WIDTH as i32,
             ),
-            outline_program: create_program(
-                include_str!("../shaders/3d.vert"),
-                include_str!("../shaders/3d-color.frag"),
-            )
-            .unwrap(),
+            outline_program,
 
             position: spawn_point,
             velocity: nalgebra_glm::vec3(0.0, 0.0, 0.0),
@@ -347,11 +331,6 @@ impl Gameplay {
         }
         self.debug = false;
         if curr_space_state && !self.prev_space_state {
-            println!(
-                "{:?} {:?}",
-                self.open_gl.camera.position(),
-                self.open_gl.camera.lookat()
-            );
         } else if walking {
             // Move the player, this way moving diagonal isn't faster
             self.velocity +=
@@ -373,15 +352,16 @@ impl Gameplay {
             .bvh_node_id;
         self.bvh.move_obj(
             player_bvh_node_id,
-            &model.get_aabb(&self.mesh_mgr),
+            &app.renderer.get_model_aabb(&model),
             &self.velocity,
         );
         self.velocity *= 0.8; // friction
 
-        self.open_gl
-            .camera
+        self.camera_3d
             .set_position(self.position + nalgebra_glm::vec3(13.85, 0.0, 8.00) * zoom);
-        self.open_gl.camera.set_lookat(self.position);
+        self.camera_3d.set_lookat(self.position);
+
+        app.renderer.set_camera(self.camera_3d);
     }
 
     fn update_clickers(&mut self, app: &App) {
@@ -393,16 +373,16 @@ impl Gameplay {
 
         let clip_coordinates = nalgebra_glm::vec4(ndc_x, ndc_y, -0.0, 1.0);
 
-        let (inv_proj, inv_view) = self.open_gl.camera.inv_proj_and_view();
+        let (inv_proj, inv_view) = self.camera_3d.inv_proj_and_view();
         let mut eye_coords = inv_proj * clip_coordinates;
         eye_coords /= eye_coords.w;
 
         let world_coords = inv_view * eye_coords;
-        let dir = (world_coords.xyz() - self.open_gl.camera.position()).normalize();
+        let dir = (world_coords.xyz() - self.camera_3d.position()).normalize();
 
         let ray = Ray {
             dir,
-            origin: self.open_gl.camera.position(),
+            origin: self.camera_3d.position(),
         };
 
         // Set all outlines to false

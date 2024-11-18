@@ -7,10 +7,12 @@ use sdl2::sys::{SDL_GetPerformanceCounter, SDL_GetPerformanceFrequency};
 use sdl2::video::SwapInterval;
 use sdl2::Sdl;
 
-#[derive(Clone)]
+use super::render_core::RenderContext;
+
 pub struct App {
     // Screen stuff
     pub window_size: nalgebra_glm::I32Vec2,
+    pub renderer: RenderContext,
 
     // Main loop stuff
     pub running: bool,
@@ -75,6 +77,7 @@ pub fn run(
 
     let mut app = App {
         window_size,
+        renderer: RenderContext::default(),
         // sdl_context,
         running: true,
         keys: [false; 256],
@@ -138,6 +141,7 @@ pub fn run(
         }
 
         if !scene_stale {
+            app.renderer.int_screen_resolution = app.window_size;
             if let Some(scene_ref) = scene_stack.last() {
                 scene_ref.borrow_mut().render(&app);
                 frames += 1;
@@ -227,29 +231,6 @@ impl App {
 
         self.mouse_left_clicked = !self.prev_mouse_left_down && self.mouse_left_down;
         self.mouse_right_clicked = !self.prev_mouse_right_down && self.mouse_right_down;
-    }
-}
-
-impl Default for App {
-    fn default() -> Self {
-        Self {
-            window_size: Default::default(),
-            running: Default::default(),
-            seconds: Default::default(),
-            ticks: Default::default(),
-            keys: [false; 256],
-            mouse_x: Default::default(),
-            mouse_y: Default::default(),
-            mouse_rel_x: Default::default(),
-            mouse_rel_y: Default::default(),
-            mouse_left_down: Default::default(),
-            mouse_right_down: Default::default(),
-            prev_mouse_left_down: Default::default(),
-            prev_mouse_right_down: Default::default(),
-            mouse_left_clicked: Default::default(),
-            mouse_right_clicked: Default::default(),
-            mouse_wheel: Default::default(),
-        }
     }
 }
 

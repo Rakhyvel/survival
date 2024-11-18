@@ -21,7 +21,7 @@ impl Default for ProjectionKind {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Copy, Clone)]
 pub struct Camera {
     position: nalgebra_glm::Vec3,
     lookat: nalgebra_glm::Vec3,
