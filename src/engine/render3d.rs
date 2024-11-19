@@ -11,7 +11,6 @@ use super::{
     physics::PositionComponent,
     render_core::{ModelComponent, ProgramId, RenderContext},
     shadow_map::DirectionalLightSource,
-    text,
 };
 
 use gl::types::GLuint;
@@ -26,6 +25,8 @@ impl RenderContext {
         bvh: &BVH<Entity>,
         debug: bool,
     ) {
+        self.set_program_from_id(self.get_program_id_from_name("3d").unwrap());
+
         let screen_resolution: nalgebra_glm::Vec2 = self.int_screen_resolution.cast();
         let u_sun_dir = self.get_program_uniform("u_sun_dir").unwrap();
         unsafe {
@@ -89,32 +90,33 @@ impl RenderContext {
             texture.activate(gl::TEXTURE0);
             texture.associate_uniform(self.get_current_program_id(), 0, "texture0");
 
-            directional_light.depth_map.activate(gl::TEXTURE1);
-            directional_light.depth_map.associate_uniform(
-                self.get_current_program_id(),
-                1,
-                "shadow_map",
-            );
+            directional_light.activate_framebuffer(self.get_current_program_id());
 
             self.draw(mesh.borrow(), model_matrix, view_matrix, proj_matrix);
         }
         // println!("{:?}", rendered);
     }
 
-    pub fn render_3d_outlines_system(
-        &self,
-        world: &mut World,
-        outline_program: ProgramId,
-        bvh: &BVH<Entity>,
-    ) {
+    pub fn render_3d_outlines_system(&self, world: &mut World, bvh: &BVH<Entity>) {
         unsafe {
             gl::StencilFunc(gl::NOTEQUAL, 1, 0xFF);
             gl::StencilMask(0x00);
             gl::Enable(gl::STENCIL_TEST);
             gl::Disable(gl::DEPTH_TEST);
         }
-        self.set_program_from_id(outline_program);
+        self.set_program_from_id(self.get_program_id_from_name("3d-solid").unwrap());
         let camera_frustrum = &self.camera.borrow().frustum();
+
+        let u_color = self.get_program_uniform("u_color").unwrap();
+        unsafe {
+            gl::Uniform4f(
+                u_color.id,
+                self.color.borrow().x,
+                self.color.borrow().y,
+                self.color.borrow().z,
+                self.color.borrow().w,
+            );
+        }
 
         let (view_matrix, proj_matrix) = self.camera.borrow().view_proj_matrices();
         for model_id in bvh.iter_frustrum(camera_frustrum, false) {

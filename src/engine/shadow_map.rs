@@ -13,17 +13,15 @@ use super::{
 
 pub struct DirectionalLightSource {
     pub shadow_camera: Camera,
-    pub shadow_program: ProgramId,
-    pub frame_buffer: Fbo,
+    frame_buffer: Fbo,
     frame_buffer_size: i32,
-    pub depth_map: Texture,
+    depth_map: Texture,
     pub light_dir: nalgebra_glm::Vec3,
 }
 
 impl DirectionalLightSource {
     pub fn new(
         shadow_camera: Camera,
-        shadow_program: ProgramId,
         light_dir: nalgebra_glm::Vec3,
         frame_buffer_size: i32,
     ) -> Self {
@@ -35,12 +33,17 @@ impl DirectionalLightSource {
         frame_buffer.unbind();
         Self {
             shadow_camera,
-            shadow_program,
             frame_buffer,
             frame_buffer_size,
             depth_map,
             light_dir: light_dir.normalize(),
         }
+    }
+
+    pub fn activate_framebuffer(&self, program_id: u32) {
+        self.depth_map.activate(gl::TEXTURE1);
+        self.depth_map
+            .associate_uniform(program_id, 1, "shadow_map");
     }
 }
 
@@ -66,7 +69,7 @@ impl RenderContext {
         }
 
         // Use a simple depth shader program
-        self.set_program_from_id(directional_light.shadow_program);
+        self.set_program_from_id(self.get_program_id_from_name("shadow").unwrap());
 
         // Compute the camera frustrum corners
         let (view_matrix, proj_matrix) = self.camera.borrow().view_proj_matrices();

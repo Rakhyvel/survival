@@ -46,7 +46,7 @@ impl AABB {
         2.0 * (d.x * d.y + d.y * d.z + d.z * d.x)
     }
 
-    pub fn within_frustrum(&self, frustrum: &Frustrum, debug: bool) -> bool {
+    pub(super) fn within_frustrum(&self, frustrum: &Frustrum, debug: bool) -> bool {
         let mut i = 0;
         for plane in frustrum.planes() {
             let vmax = self.get_furthest_corner(plane);

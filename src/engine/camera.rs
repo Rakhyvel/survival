@@ -91,7 +91,7 @@ impl Camera {
         )
     }
 
-    pub fn frustum(&self) -> Frustrum {
+    pub(super) fn frustum(&self) -> Frustrum {
         Frustrum::from_inv_proj_view(self.inv_proj_view(), false)
     }
 

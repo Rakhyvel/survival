@@ -1,24 +1,31 @@
-use std::{cell::RefCell, collections::HashMap, ops::Deref};
+use std::{borrow::BorrowMut, cell::RefCell, collections::HashMap, fmt::Debug, ops::Deref};
 
 use gl::types::GLuint;
 use obj::{load_obj, Obj, TexturedVertex};
 
 use super::{
     aabb::AABB,
-    camera::Camera,
-    objects::{Buffer, Program, Texture, Uniform, Vao},
-    text,
+    camera::{Camera, ProjectionKind},
+    font::{Font, FontId, FontManager},
+    objects::{create_program, Buffer, Program, Texture, Uniform, Vao},
 };
 
-#[derive(Default)]
 pub struct RenderContext {
-    pub(crate) camera: RefCell<Camera>,
-    pub(crate) program: RefCell<Option<ProgramId>>,
+    // Updated by the user
+    pub(super) camera: RefCell<Camera>,
+    pub(super) program: RefCell<Option<ProgramId>>,
+    pub(super) color: RefCell<nalgebra_glm::Vec4>,
+    pub(super) font: RefCell<Option<FontId>>,
+
+    // Managers
     mesh_manager: RefCell<ResourceManager<Mesh, MeshId>>,
     texture_manager: RefCell<ResourceManager<Texture, TextureId>>,
     program_manager: RefCell<ResourceManager<Program, ProgramId>>,
-    // TODO: Move font manager in here, too
-    pub(crate) int_screen_resolution: nalgebra_glm::I32Vec2,
+    font_manager: RefCell<FontManager>,
+
+    // Updated by the app
+    pub(super) int_screen_resolution: nalgebra_glm::I32Vec2,
+    pub(super) camera_2d: Camera,
 }
 
 struct ResourceManager<Resource, Id: OpaqueId> {
@@ -26,21 +33,21 @@ struct ResourceManager<Resource, Id: OpaqueId> {
     keys: HashMap<&'static str, Id>,
 }
 
-trait OpaqueId: Copy {
+pub(super) trait OpaqueId: Copy {
     fn new(id: usize) -> Self;
     fn as_usize(&self) -> usize;
 }
 
 /// Opaque type used by the mesh manager to associate meshes.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct MeshId(usize);
 
 /// Opaque type used by the texture manager to associate textures.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct TextureId(usize);
 
 /// Opaque type used by the program manager to associate programs.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct ProgramId(usize);
 
 /// An actual model, with geometry, a position, scale, rotation, and texture.
@@ -67,7 +74,7 @@ struct GeometryData {
     ibo: Buffer<u32>,
     vbo: Buffer<f32>,
     vao: Vao,
-    pub vertex_data: Vec<f32>,
+    vertex_data: Vec<f32>,
 }
 
 enum GeometryDataIndex {
@@ -79,7 +86,79 @@ enum GeometryDataIndex {
 
 impl RenderContext {
     pub fn new() -> Self {
-        Self::default()
+        let mut retval = Self {
+            camera: RefCell::new(Camera::default()),
+            program: RefCell::new(None),
+            color: RefCell::new(nalgebra_glm::vec4(0.0, 0.0, 0.0, 1.0)),
+            font: RefCell::new(None),
+
+            mesh_manager: RefCell::new(ResourceManager::new()),
+            texture_manager: RefCell::new(ResourceManager::new()),
+            program_manager: RefCell::new(ResourceManager::new()),
+            font_manager: RefCell::new(FontManager::new()),
+
+            int_screen_resolution: nalgebra_glm::I32Vec2::new(0, 0),
+            camera_2d: Camera::new(
+                nalgebra_glm::vec3(0.0, 0.0, 0.0),
+                nalgebra_glm::vec3(0.0, 0.0, 1.0),
+                nalgebra_glm::vec3(0.0, 1.0, 0.0),
+                ProjectionKind::Orthographic {
+                    left: -1.0,
+                    right: 1.0,
+                    bottom: -1.0,
+                    top: 1.0,
+                    near: 0.1,
+                    far: 10.0,
+                },
+            ),
+        };
+
+        // TODO: Add meshes
+        // TODO: Add textures (?)
+
+        // Add programs
+        retval.add_program(
+            create_program(
+                include_str!("../shaders/3d.vert"),
+                include_str!("../shaders/3d.frag"),
+            )
+            .unwrap(),
+            Some("3d"),
+        );
+        retval.add_program(
+            create_program(
+                include_str!("../shaders/2d.vert"),
+                include_str!("../shaders/2d.frag"),
+            )
+            .unwrap(),
+            Some("2d"),
+        );
+        retval.add_program(
+            create_program(
+                include_str!("../shaders/shadow.vert"),
+                include_str!("../shaders/shadow.frag"),
+            )
+            .unwrap(),
+            Some("shadow"),
+        );
+        retval.add_program(
+            create_program(
+                include_str!("../shaders/2d.vert"),
+                include_str!("../shaders/solid-color.frag"),
+            )
+            .unwrap(),
+            Some("2d-solid"),
+        );
+        retval.add_program(
+            create_program(
+                include_str!("../shaders/3d.vert"),
+                include_str!("../shaders/solid-color.frag"),
+            )
+            .unwrap(),
+            Some("3d-solid"),
+        );
+
+        retval
     }
 
     pub fn set_camera(&self, camera: Camera) {
@@ -108,6 +187,15 @@ impl RenderContext {
         program.set();
     }
 
+    pub fn set_color(&self, color: nalgebra_glm::Vec4) {
+        let mut color_ref = self.color.borrow_mut();
+        *color_ref = color;
+    }
+
+    pub fn set_font(&self, font: FontId) {
+        *self.font.borrow_mut() = Some(font);
+    }
+
     pub fn add_mesh(&self, mesh: Mesh, name: Option<&'static str>) -> MeshId {
         self.mesh_manager.borrow_mut().add(mesh, name)
     }
@@ -125,12 +213,35 @@ impl RenderContext {
         self.add_mesh(Mesh::new(indices, datas), name)
     }
 
-    pub fn add_texture(&self, texture: Texture, name: Option<&'static str>) -> TextureId {
+    pub(super) fn add_texture(&self, texture: Texture, name: Option<&'static str>) -> TextureId {
         self.texture_manager.borrow_mut().add(texture, name)
     }
 
-    pub fn add_program(&self, program: Program, name: Option<&'static str>) -> ProgramId {
-        self.program_manager.borrow_mut().add(program, name)
+    pub fn add_texture_from_png(
+        &self,
+        texture_filename: &'static str,
+        name: Option<&'static str>,
+    ) -> TextureId {
+        self.texture_manager
+            .borrow_mut()
+            .add(Texture::from_png(texture_filename), name)
+    }
+
+    pub(super) fn add_program(&self, program: Program, name: Option<&'static str>) -> ProgramId {
+        let retval = self.program_manager.borrow_mut().add(program, name);
+        retval
+    }
+
+    pub fn add_font(
+        &self,
+        path: &'static str,
+        name: &'static str,
+        size: u16,
+        style: sdl2::ttf::FontStyle,
+    ) -> FontId {
+        self.font_manager
+            .borrow_mut()
+            .add_font(path, name, size, style, self)
     }
 
     pub fn get_mesh(&self, name: &'static str) -> Option<std::cell::Ref<'_, Mesh>> {
@@ -141,7 +252,7 @@ impl RenderContext {
         }
     }
 
-    pub fn get_texture(&self, name: &'static str) -> Option<std::cell::Ref<'_, Texture>> {
+    pub(super) fn get_texture(&self, name: &'static str) -> Option<std::cell::Ref<'_, Texture>> {
         if let Some(id) = self.get_texture_id_from_name(name) {
             self.get_texture_from_id(id)
         } else {
@@ -149,7 +260,7 @@ impl RenderContext {
         }
     }
 
-    pub fn get_program(&self, name: &'static str) -> Option<std::cell::Ref<'_, Program>> {
+    pub(super) fn get_program(&self, name: &'static str) -> Option<std::cell::Ref<'_, Program>> {
         if let Some(id) = self.get_program_id_from_name(name) {
             self.get_program_from_id(id)
         } else {
@@ -167,7 +278,7 @@ impl RenderContext {
         }
     }
 
-    pub fn get_texture_from_id(&self, id: TextureId) -> Option<std::cell::Ref<'_, Texture>> {
+    pub(super) fn get_texture_from_id(&self, id: TextureId) -> Option<std::cell::Ref<'_, Texture>> {
         let manager = self.texture_manager.borrow();
         if let Some(texture) = manager.get_from_id(id) {
             // Map the Ref<TextureManager> to Ref<Texture>
@@ -177,11 +288,23 @@ impl RenderContext {
         }
     }
 
-    pub fn get_program_from_id(&self, id: ProgramId) -> Option<std::cell::Ref<'_, Program>> {
+    pub(super) fn get_program_from_id(&self, id: ProgramId) -> Option<std::cell::Ref<'_, Program>> {
         let manager = self.program_manager.borrow();
         if let Some(program) = manager.get_from_id(id) {
             // Map the Ref<ProgramManager> to Ref<Program>
             Some(std::cell::Ref::map(manager, |m| m.get_from_id(id).unwrap()))
+        } else {
+            None
+        }
+    }
+
+    pub(super) fn get_font_from_id(&self, id: FontId) -> Option<std::cell::Ref<'_, Font>> {
+        let manager = self.font_manager.borrow();
+        if let Some(font) = manager.get_font_from_id(id) {
+            // Map the Ref<TextureManager> to Ref<Texture>
+            Some(std::cell::Ref::map(manager, |m| {
+                m.get_font_from_id(id).unwrap()
+            }))
         } else {
             None
         }
@@ -197,6 +320,10 @@ impl RenderContext {
 
     pub fn get_program_id_from_name(&self, name: &'static str) -> Option<ProgramId> {
         self.program_manager.borrow().get_id_from_name(name)
+    }
+
+    pub fn get_font_id_from_name(&self, name: &'static str) -> Option<FontId> {
+        self.font_manager.borrow().get_id_from_name(name)
     }
 
     pub fn get_mesh_aabb(&self, mesh_id: MeshId) -> AABB {
@@ -228,7 +355,7 @@ impl RenderContext {
         }
     }
 
-    pub fn get_program_uniform(&self, uniform_name: &str) -> Result<Uniform, &'static str> {
+    pub(super) fn get_program_uniform(&self, uniform_name: &str) -> Result<Uniform, &'static str> {
         Uniform::new(self.get_current_program_id(), uniform_name)
     }
 
@@ -280,7 +407,7 @@ impl RenderContext {
     }
 }
 
-impl<Resource, Id: OpaqueId> ResourceManager<Resource, Id> {
+impl<Resource, Id: OpaqueId + Debug> ResourceManager<Resource, Id> {
     pub fn new() -> Self {
         Self {
             resources: vec![],

@@ -12,7 +12,7 @@ use super::{
     objects::Texture,
     rectangle::Rectangle,
     render2d,
-    render_core::{RenderContext, TextureId},
+    render_core::{OpaqueId, RenderContext, TextureId},
 };
 
 #[derive(Copy, Clone, Default)]
@@ -21,7 +21,7 @@ struct Glyph {
     advance: usize,
 }
 
-pub struct Font {
+pub(super) struct Font {
     // ttf_font: sdl2::ttf::Font<'a, 'a>,
     pub cache_texture: Option<TextureId>,
     glyphs: [Glyph; 95], //< All 95 printable ASCII glyphs
@@ -36,7 +36,7 @@ pub struct Font {
 #[derive(Copy, Clone)]
 pub struct FontId(usize);
 
-pub struct FontManager {
+pub(super) struct FontManager {
     ttf_context: Sdl2TtfContext,
     fonts: Vec<Font>,                    //< List of fonts
     keys: HashMap<&'static str, FontId>, //< Maps font names to ids in the font list
@@ -81,8 +81,7 @@ impl Font {
                 size: glyph.rect.size,
             };
             // TODO: Color mod in the 2D shader
-            // TODO: Make part of renderer
-            renderer.render_rectangle(dest_rect, self.cache_texture.unwrap(), glyph.rect);
+            renderer.copy_texture(dest_rect, self.cache_texture.unwrap(), glyph.rect);
             cursor.x += glyph.advance as f32;
         }
     }
@@ -183,12 +182,12 @@ impl FontManager {
     }
 }
 
-impl FontId {
-    pub fn new(id: usize) -> Self {
+impl OpaqueId for FontId {
+    fn new(id: usize) -> Self {
         FontId(id)
     }
 
-    pub fn as_usize(&self) -> usize {
+    fn as_usize(&self) -> usize {
         self.0
     }
 }

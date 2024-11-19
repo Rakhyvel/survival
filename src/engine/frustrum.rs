@@ -1,7 +1,7 @@
 use super::plane::Plane;
 
 #[derive(Debug, Copy, Clone)]
-pub struct Frustrum {
+pub(super) struct Frustrum {
     corners: [nalgebra_glm::Vec3; 8],
     planes: [Plane; 6],
 }

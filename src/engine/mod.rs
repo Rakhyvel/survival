@@ -36,5 +36,3 @@ pub(crate) mod render_core;
 pub(crate) mod shadow_map;
 #[allow(unused)]
 pub(crate) mod sphere;
-#[allow(unused)]
-pub(crate) mod text;

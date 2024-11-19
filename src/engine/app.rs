@@ -77,7 +77,7 @@ pub fn run(
 
     let mut app = App {
         window_size,
-        renderer: RenderContext::default(),
+        renderer: RenderContext::new(),
         // sdl_context,
         running: true,
         keys: [false; 256],

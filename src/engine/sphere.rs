@@ -11,7 +11,7 @@ impl Sphere {
         Self { center, radius }
     }
 
-    pub fn within_frustrum(&self, frustrum: &Frustrum) -> bool {
+    pub(super) fn within_frustrum(&self, frustrum: &Frustrum) -> bool {
         for plane in frustrum.planes() {
             if plane.normal().dot(&self.center) + plane.dist() + self.radius < 0.0 {
                 return false;

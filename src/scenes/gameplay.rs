@@ -9,13 +9,11 @@ use crate::{
         bvh::{BVHNodeId, BVH},
         camera::{Camera, ProjectionKind},
         chunked_map::ChunkedPerlinMap,
-        font::FontManager,
-        objects::{create_program, Texture},
         perlin::HeightMap,
         ray::Ray,
         rectangle::Rectangle,
         render2d::NineSlice,
-        render_core::{ModelComponent, ProgramId},
+        render_core::ModelComponent,
         shadow_map::DirectionalLightSource,
     },
     App, Scene,
@@ -42,12 +40,7 @@ pub struct Rock {}
 pub struct Gameplay {
     world: World,
     camera_3d: Camera,
-    camera_2d: Camera,
-    program_3d: ProgramId,
-    program_2d: ProgramId,
-    outline_program: ProgramId,
     directional_light: DirectionalLightSource,
-    font_mgr: FontManager,
     map: ChunkedPerlinMap,
     bvh: BVH<Entity>,
 
@@ -101,7 +94,6 @@ impl Scene for Gameplay {
             &mut self.world,
             &self.bvh,
         );
-        app.renderer.set_program_from_id(self.program_3d);
         app.renderer.render_3d_models_system(
             &mut self.world,
             &self.directional_light,
@@ -109,16 +101,14 @@ impl Scene for Gameplay {
             self.debug,
         );
         app.renderer
-            .render_3d_outlines_system(&mut self.world, self.outline_program, &self.bvh);
+            .set_color(nalgebra_glm::vec4(1.0, 1.0, 1.0, 0.8));
+        app.renderer
+            .render_3d_outlines_system(&mut self.world, &self.bvh);
 
-        app.renderer.set_program_from_id(self.program_2d);
-        app.renderer.set_camera(self.camera_2d);
-        let font = self.font_mgr.get_font("font").unwrap();
-        font.draw(
-            nalgebra_glm::vec2(100.0, 100.0),
-            "Feeling: Fine",
-            &app.renderer,
-        );
+        let font = app.renderer.get_font_id_from_name("font").unwrap();
+        app.renderer.set_font(font);
+        app.renderer
+            .draw_text(nalgebra_glm::vec2(10.0, 10.0), "Hunger");
 
         let nine_slice = NineSlice {
             texture: app
@@ -135,16 +125,33 @@ impl Scene for Gameplay {
             border: 8.0,
         };
         app.renderer
-            .render_nine_slice(nine_slice, Rectangle::new(100.0, 200.0, 164.0, 16.0));
+            .render_nine_slice(nine_slice, Rectangle::new(70.0, 10.0, 164.0, 16.0));
         app.renderer.render_nine_slice(
             nine_slice2,
             Rectangle::new(
-                100.0,
-                200.0,
+                70.0,
+                10.0,
                 (app.ticks as f32 * 0.01).cos().abs() * 100.0 + 16.0,
                 16.0,
             ),
         );
+
+        // Draw the two hand inventory slots
+        const SLOT_SIZE: f32 = 96.0;
+        app.renderer
+            .set_color(nalgebra_glm::vec4(0.0, 0.0, 0.0, 0.5));
+        app.renderer.fill_rect(Rectangle::new(
+            app.window_size.x as f32 * 0.5 - SLOT_SIZE * 1.5,
+            app.window_size.y as f32 - SLOT_SIZE,
+            SLOT_SIZE,
+            SLOT_SIZE,
+        ));
+        app.renderer.fill_rect(Rectangle::new(
+            app.window_size.x as f32 * 0.5 + SLOT_SIZE * 0.5,
+            app.window_size.y as f32 - SLOT_SIZE,
+            SLOT_SIZE,
+            SLOT_SIZE,
+        ));
     }
 }
 
@@ -167,66 +174,20 @@ impl Gameplay {
         // Setup the texture manager
         let grass_texture = app
             .renderer
-            .add_texture(Texture::from_png("grass.png"), Some("grass"));
+            .add_texture_from_png("grass.png", Some("grass"));
         let water_texture = app
             .renderer
-            .add_texture(Texture::from_png("water.png"), Some("water"));
+            .add_texture_from_png("water.png", Some("water"));
+        app.renderer.add_texture_from_png("tree.png", Some("tree"));
+        app.renderer.add_texture_from_png("rock.png", Some("rock"));
         app.renderer
-            .add_texture(Texture::from_png("tree.png"), Some("tree"));
+            .add_texture_from_png("nine-slice-test.png", Some("nine-slice-test"));
         app.renderer
-            .add_texture(Texture::from_png("rock.png"), Some("rock"));
-        app.renderer.add_texture(
-            Texture::from_png("nine-slice-test.png"),
-            Some("nine-slice-test"),
-        );
-        app.renderer.add_texture(
-            Texture::from_png("nine-slice-test2.png"),
-            Some("nine-slice-test2"),
-        );
-
-        // Setup the program manager
-        let program_3d = app.renderer.add_program(
-            create_program(
-                include_str!("../shaders/3d.vert"),
-                include_str!("../shaders/3d.frag"),
-            )
-            .unwrap(),
-            Some("3d"),
-        );
-        let program_2d = app.renderer.add_program(
-            create_program(
-                include_str!("../shaders/2d.vert"),
-                include_str!("../shaders/2d.frag"),
-            )
-            .unwrap(),
-            Some("2d"),
-        );
-        let shadow_program = app.renderer.add_program(
-            create_program(
-                include_str!("../shaders/shadow.vert"),
-                include_str!("../shaders/shadow.frag"),
-            )
-            .unwrap(),
-            Some("shadow"),
-        );
-        let outline_program = app.renderer.add_program(
-            create_program(
-                include_str!("../shaders/3d.vert"),
-                include_str!("../shaders/3d-color.frag"),
-            )
-            .unwrap(),
-            Some("outline"),
-        );
+            .add_texture_from_png("nine-slice-test2.png", Some("nine-slice-test2"));
 
         // Setup the font manager
-        let mut font_mgr = FontManager::new();
-        font_mgr.add_font(
-            "res/Consolas.ttf",
-            "font",
-            16,
-            sdl2::ttf::FontStyle::NORMAL,
-            &app.renderer,
-        );
+        app.renderer
+            .add_font("res/Consolas.ttf", "font", 16, sdl2::ttf::FontStyle::NORMAL);
 
         let mut bvh = BVH::<Entity>::new();
 
@@ -287,23 +248,7 @@ impl Gameplay {
                 nalgebra_glm::vec3(0.0, 0.0, 1.0),
                 ProjectionKind::Perspective { fov: 0.65 },
             ),
-            program_3d,
-            camera_2d: Camera::new(
-                nalgebra_glm::vec3(0.0, 0.0, 0.0),
-                nalgebra_glm::vec3(0.0, 0.0, 1.0),
-                nalgebra_glm::vec3(0.0, 1.0, 0.0),
-                ProjectionKind::Orthographic {
-                    left: -1.0,
-                    right: 1.0,
-                    bottom: -1.0,
-                    top: 1.0,
-                    near: 0.1,
-                    far: 10.0,
-                },
-            ),
-            program_2d,
             bvh,
-            font_mgr,
             map,
             directional_light: DirectionalLightSource::new(
                 Camera::new(
@@ -320,11 +265,9 @@ impl Gameplay {
                         far: 0.0,
                     },
                 ),
-                shadow_program,
                 nalgebra_glm::vec3(-0.1, 0.0, 0.86),
                 MAP_WIDTH as i32,
             ),
-            outline_program,
 
             position: spawn_point,
             velocity: nalgebra_glm::vec3(0.0, 0.0, 0.0),

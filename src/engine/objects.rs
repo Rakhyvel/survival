@@ -16,7 +16,7 @@ use gl::{
 use image::{EncodableLayout, ImageError};
 
 // An OpenGL Shader
-pub struct Shader {
+pub(super) struct Shader {
     id: GLuint,
 }
 
@@ -64,8 +64,9 @@ impl Drop for Shader {
     }
 }
 
+// TODO: Rename OpenGlProgram, and rename ProgramId to Program
 #[derive(Default)]
-pub struct Program {
+pub(super) struct Program {
     id: GLuint,
 }
 
@@ -138,7 +139,7 @@ fn create_whitespace_cstring_with_len(len: usize) -> CString {
     unsafe { CString::from_vec_unchecked(buffer) }
 }
 
-pub fn create_program(
+pub(super) fn create_program(
     vert_data: &'static str,
     frag_data: &'static str,
 ) -> Result<Program, &'static str> {
@@ -160,7 +161,7 @@ pub fn create_program(
 
 // OpenGL Vertex Buffer Object
 // Contains vertex data given as input to the vertex shader
-pub struct Buffer<T> {
+pub(super) struct Buffer<T> {
     pub id: GLuint,
     target: GLenum,
     phantom: PhantomData<T>,
@@ -218,7 +219,7 @@ impl<T> Drop for Buffer<T> {
 }
 
 /// OpenGL Vertex Array Object
-pub struct Vao {
+pub(super) struct Vao {
     pub id: GLuint,
 }
 
@@ -283,7 +284,7 @@ impl Drop for Vao {
     }
 }
 
-pub struct Uniform {
+pub(super) struct Uniform {
     pub id: GLint,
 }
 
@@ -298,8 +299,9 @@ impl Uniform {
     }
 }
 
+// TODO: Rename OpenGlTexture, and rename TextureId to Texture
 #[derive(Clone)]
-pub struct Texture {
+pub(super) struct Texture {
     pub id: GLuint,
 }
 
@@ -500,7 +502,7 @@ impl Default for Texture {
     }
 }
 
-pub struct Fbo {
+pub(super) struct Fbo {
     pub id: GLuint,
 }
 

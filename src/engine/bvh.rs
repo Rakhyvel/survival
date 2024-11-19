@@ -251,7 +251,7 @@ impl<Object: Copy + Clone> BVH<Object> {
         }
     }
 
-    pub fn iter_frustrum<'a>(
+    pub(super) fn iter_frustrum<'a>(
         &'a self,
         frustrum: &'a Frustrum,
         debug: bool,
